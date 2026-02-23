@@ -1,116 +1,171 @@
-# Sentinel-Net-SE Frontend Dashboard
+# Sentinel-Net-SE: Software Reliability Monitoring System
 
-A professional, high-fidelity React frontend for the **Sentinel-Net-SE** software reliability monitoring system.
+A professional, high-fidelity React frontend dashboard for real-time software reliability monitoring with NLP-powered semantic analysis and GitHub repository intelligence.
 
-Currently, two official plugins are available:
+## 🎯 Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Real-Time Risk Scoring**: Live failure risk assessment (0-100%)
+- **Semantic Signal Feed**: NLP-powered analysis of commits, issues, and alerts
+- **Temporal Trends Analysis**: Time-series visualization of system metrics
+- **AI Insights**: Machine learning-based predictions and recommendations
+- **GitHub Integration**: Analyze real GitHub repositories for reliability metrics
+- **Dark Cyber Aesthetic**: Professional, modern UI with high visual fidelity
 
-## React Compiler
+## 🏗️ Architecture
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Frontend Stack
+- **Framework**: React 18+ with TypeScript
+- **Build Tool**: Vite
+- **Styling**: Tailwind CSS with custom Dark Cyber theme
+- **Charts**: Recharts
+- **Icons**: Lucide React
 
-## Expanding the ESLint configuration
+### Backend Stack
+- **API**: FastAPI (Python)
+- **NLP Processing**: SpaCy + TextBlob
+- **GitHub Analysis**: PyGithub
+- **Real-Time**: WebSocket support ready
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 16+
-- npm 7+
+- Node.js 16+ and npm
+- Python 3.8+
+- Git
 
-### Installation
+### Frontend Setup
 ```bash
 npm install
 npm run dev
 ```
-Opens at http://localhost:5173
+Opens at `http://localhost:5173`
 
-### Build
+### Backend Setup (In separate terminal)
+```bash
+cd backend
+python -m venv venv
+
+# Windows
+.\venv\Scripts\activate
+
+# macOS/Linux
+source venv/bin/activate
+
+pip install -r requirements.txt
+python main.py
+```
+Backend available at `http://localhost:8000`
+
+## 📁 Project Structure
+
+```
+sentinel-net/
+├── src/
+│   ├── components/              # UI components
+│   │   ├── RiskScoreHero.tsx
+│   │   ├── SemanticSignalFeed.tsx
+│   │   ├── TemporalChart.tsx
+│   │   ├── AIInsightsPanel.tsx
+│   │   ├── GitHubAnalyzer.tsx
+│   │   ├── Sidebar.tsx
+│   │   └── RefreshButton.tsx
+│   ├── pages/
+│   │   ├── OverviewPage.tsx
+│   │   ├── SignalsPage.tsx
+│   │   ├── TrendsPage.tsx
+│   │   └── ReportsPage.tsx
+│   ├── hooks/
+│   │   └── useSystemData.ts      # Real-time data management
+│   ├── types/
+│   │   └── index.ts
+│   ├── data/
+│   │   └── mockData.ts
+│   └── App.tsx
+├── backend/
+│   ├── main.py                   # FastAPI server
+│   ├── github_analyzer.py        # GitHub analysis
+│   ├── nlp_processor.py          # NLP processing
+│   └── requirements.txt
+├── tailwind.config.js
+├── vite.config.ts
+└── package.json
+```
+
+## 🎨 Dark Cyber Color Palette
+
+- **Deep Charcoal**: `#1a1a2e`
+- **Electric Blue**: `#00d4ff`
+- **Warning Orange**: `#ff6b35`
+- **Cyber Gray**: `#16213e`
+
+## 🔌 API Endpoints
+
+### System Data
+- `GET /api/system-data` - Complete system data
+- `GET /api/metrics` - System metrics
+- `GET /api/signals` - Recent signals
+- `GET /api/temporal-data` - Trend data
+- `GET /api/ai-insights` - AI predictions
+
+### GitHub Analysis
+- `GET /api/analyze-github?repo=owner/repo`
+- Example: `/api/analyze-github?repo=torvalds/linux`
+
+## 🔄 Real-Time Updates
+
+The frontend automatically refreshes data every 30 seconds:
+- Live failure risk scores
+- Real-time signals with NLP analysis
+- Dynamic temporal trends
+- Actionable AI insights
+
+## 📊 Dashboard Pages
+
+### Overview
+Risk score gauge, signal feed, GitHub analyzer
+
+### Micro-Crisis Signals
+Categorized signals (Urgent, Negative, Neutral)
+
+### Temporal Trends
+24-hour trends with dynamic statistics and AI insights
+
+### Risk Reports
+Current status, recommendations, export (JSON/CSV)
+
+## 🚢 Production Build
+
 ```bash
 npm run build
+npm run preview
 ```
 
-## Features
+## 📚 Documentation
 
-- 📊 Real-time failure risk metrics and gauges
-- 🔔 Semantic signal feed with status alerts
-- 📈 Temporal trend analysis with charts
-- 🤖 AI-powered insights and recommendations
-- 🎨 Dark Cyber aesthetic design
-- 📱 Fully responsive layout
-- ⚙️ Modular component architecture
-- 🔄 Ready for API integration
+- [Development Guide](.github/copilot-instructions.md)
+- [GitHub Analysis Guide](GITHUB_ANALYSIS_GUIDE.md)
+- [Python Backend Guide](PYTHON_BACKEND_GUIDE.md)
+- [Implementation Summary](IMPLEMENTATION_SUMMARY.md)
 
-## Project Structure
+## 🔒 Security
 
-```
-src/
-├── components/     # Reusable UI components
-├── pages/          # Full-page views
-├── hooks/          # Custom hooks
-├── types/          # TypeScript types
-├── data/           # Mock data
-└── App.tsx
-```
+- Input validation on API responses
+- XSS protection via React
+- CORS configured for development
+- Environment variables for config
 
-## Documentation
+## 📝 License
 
-See [.github/copilot-instructions.md](.github/copilot-instructions.md) for complete development guide.
+Apache License 2.0
+
+## 🤝 Contributing
+
+1. Create feature branch
+2. Commit changes
+3. Push and open PR
+
+---
+
+**Status**: Production Ready ✅
+**Version**: 3.0.0
+**Last Updated**: February 23, 2026
