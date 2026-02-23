@@ -1,0 +1,35 @@
+/* Responsive layout adjustments */
+
+@media (max-width: 1024px) {
+  main {
+    margin-left: 80px;
+    padding: 1.5rem;
+  }
+}
+
+@media (max-width: 768px) {
+  main {
+    margin-left: 60px;
+    padding: 1rem;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+  }
+}
+
+/* Scrollbar styling for better integration */
+main {
+  scrollbar-gutter: stable;
+}
+
+/* Ensures proper flex behavior */
+#root {
+  display: flex;
+  min-height: 100vh;
+}
+
