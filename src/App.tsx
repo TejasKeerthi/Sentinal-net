@@ -44,8 +44,9 @@ function App() {
       <main className="flex-1 ml-64 p-8 overflow-auto">
         <div className="max-w-7xl mx-auto">
           {error && (
-            <div className="mb-4 p-4 bg-warning-orange bg-opacity-10 border border-warning-orange border-opacity-50 rounded-lg text-warning-orange max-w-6xl mx-auto">
-              <strong>Connection Status:</strong> {error}
+            <div className="mb-4 p-3 bg-cyber-card border border-cyan-500 border-opacity-20 rounded-xl text-gray-400 text-sm max-w-6xl mx-auto flex items-center gap-2">
+              <span className="text-electric-blue text-base">ℹ</span>
+              {error}
             </div>
           )}
           {renderPage()}

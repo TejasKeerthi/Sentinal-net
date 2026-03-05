@@ -118,7 +118,10 @@ export const GitHubAnalyzer = ({ onAnalyze, isLoading, currentRepo }: GitHubAnal
           {/* Info Tip */}
           <div className="p-3 bg-blue-900 bg-opacity-10 border border-blue-700 border-opacity-15 rounded-xl">
             <p className="text-gray-400 text-xs leading-relaxed">
-              <span className="text-electric-blue font-semibold">Tip:</span> Enter any public GitHub repository. The system will analyze commits, issues, and pull requests using NLP to calculate accurate reliability metrics and risk scores.
+              <span className="text-electric-blue font-semibold">Tip:</span>{' '}
+              {window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+                ? 'Enter any public GitHub repository. The system will analyze commits, issues, and pull requests using NLP to calculate accurate reliability metrics and risk scores.'
+                : 'This is a live demo. To enable real-time GitHub analysis, clone the repo and run the Python backend locally. See the README for setup instructions.'}
             </p>
           </div>
         </div>

@@ -4,6 +4,15 @@ import { mockSystemData } from '../data/mockData';
 
 const API_BASE_URL = 'http://localhost:8000';
 
+/**
+ * Returns true when running on GitHub Pages or any non-localhost deployment.
+ * In production, the Python backend is not available, so we skip all API calls.
+ */
+const isProduction = (): boolean => {
+  const host = window.location.hostname;
+  return host !== 'localhost' && host !== '127.0.0.1';
+};
+
 export const useSystemData = () => {
   const [data, setData] = useState<SystemData>(mockSystemData);
   const [isLoading, setIsLoading] = useState(false);
@@ -13,11 +22,14 @@ export const useSystemData = () => {
 
   /**
    * Load data from the backend API.
-   * If repoUrl is given, calls /api/analyze-github which fetches real GitHub data.
-   * Otherwise falls back to /api/system-data (mock from backend).
-   * If the backend is unreachable, gracefully falls back to client-side mock data.
+   * On production (GitHub Pages) this is a no-op — we use mock data.
    */
   const loadData = useCallback(async (repoUrl?: string): Promise<boolean> => {
+    // On GitHub Pages, skip API calls entirely — backend doesn't exist there
+    if (isProduction()) {
+      return false;
+    }
+
     try {
       const url = repoUrl
         ? `${API_BASE_URL}/api/analyze-github?repo=${encodeURIComponent(repoUrl)}`
@@ -60,7 +72,7 @@ export const useSystemData = () => {
 
       // Don't show network errors as scary — just note the backend isn't running
       if (errorMessage.includes('fetch') || errorMessage.includes('network') || errorMessage.includes('abort') || errorMessage.includes('Failed')) {
-        setError('Backend not running. Showing placeholder data. Start the backend with: cd backend && python main.py');
+        setError('Backend not running. Start with: cd backend && python main.py');
       } else {
         setError(errorMessage);
       }
@@ -73,6 +85,7 @@ export const useSystemData = () => {
    * otherwise fetches generic system data.
    */
   const refreshData = useCallback(async () => {
+    if (isProduction()) return; // No-op on GitHub Pages
     setIsLoading(true);
     try {
       if (currentRepo) {
@@ -87,7 +100,7 @@ export const useSystemData = () => {
 
   /**
    * Analyze a specific GitHub repository.
-   * This is the primary action — fetches real data from GitHub via the backend.
+   * On production, shows a message that backend is required.
    */
   const analyzeGitHubRepo = useCallback(async (repoUrl: string) => {
     if (!repoUrl.trim()) {
@@ -95,14 +108,18 @@ export const useSystemData = () => {
       return;
     }
 
+    // On GitHub Pages, we can't reach the backend
+    if (isProduction()) {
+      setError('Live analysis requires the Python backend. Run locally: cd backend && python main.py');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
-    setCurrentRepo(repoUrl);
 
     try {
       const success = await loadData(repoUrl);
       if (!success) {
-        // Keep current data, error is already set
         console.warn('Analysis failed for:', repoUrl);
       }
     } finally {
