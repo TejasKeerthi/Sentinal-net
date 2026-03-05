@@ -58,13 +58,27 @@ class GitHubAnalyzer:
             metrics = self._calculate_metrics(repo)
             signals = self._extract_signals(repo)
             temporal_data = self._analyze_temporal_trends(repo)
-            insight = self._generate_insight(repo, metrics, signals)
+            conflict_data = self._analyze_merge_conflicts(repo)
+            
+            # Adjust metrics based on merge conflicts
+            if conflict_data["conflict_risk_score"] > 0:
+                metrics["failureRiskScore"] = min(100, 
+                    int(round(metrics["failureRiskScore"] * 0.7 + conflict_data["conflict_risk_score"] * 0.3))
+                )
+                # Update health status based on adjusted risk
+                if metrics["failureRiskScore"] > 85:
+                    metrics["systemHealth"] = "Critical"
+                elif metrics["failureRiskScore"] > 70:
+                    metrics["systemHealth"] = "Warning"
+            
+            insight = self._generate_insight(repo, metrics, signals, conflict_data)
             
             return {
                 "metrics": metrics,
                 "signals": signals,
                 "temporalData": temporal_data,
                 "aiInsights": insight,
+                "mergeConflicts": conflict_data,
                 "repoInfo": {
                     "name": repo.full_name,
                     "description": repo.description,
@@ -109,6 +123,8 @@ class GitHubAnalyzer:
             contributors_30d, 
             open_issues
         )
+        # Ensure integer 0-100
+        risk_score = max(0, min(100, int(round(risk_score))))
         
         # Health status
         if risk_score > 85:
@@ -153,10 +169,18 @@ class GitHubAnalyzer:
     
     def _calculate_risk_score_nlp(self, repo, commits: int, contributors: int, issues: int) -> int:
         """
-        Calculate failure risk score (0-100) using NLP analysis
-        Considers commit messages, issue descriptions, and pull request content
+        Calculate failure risk score (0-100) using NLP analysis.
+        
+        Algorithm:
+          - Base score: 30 (neutral starting point)
+          - NLP signals from recent commits: each bug +4, each urgent +6, each high-risk +8
+          - Issue-to-commit ratio: high ratio = more risk
+          - Stale repo (no recent commits): big risk penalty  
+          - High contributor count: slight coordination risk
+          - Low activity: moderate risk
+          - Clamped to integer 0-100
         """
-        score = 50  # Base score
+        score = 30  # Neutral base (lower than before — we are less alarmist)
         nlp = get_processor()
         
         # Analyze recent commits for NLP risk signals
@@ -164,8 +188,11 @@ class GitHubAnalyzer:
             bug_count = 0
             urgent_count = 0
             high_risk_count = 0
+            positive_count = 0
             
-            for commit in repo.get_commits()[:10]:  # Sample first 10 commits
+            sampled_commits = list(repo.get_commits()[:15])  # Sample up to 15 commits
+            
+            for commit in sampled_commits:
                 msg = commit.commit.message.split("\n")[0]
                 analysis = nlp.analyze(msg)
                 
@@ -175,28 +202,55 @@ class GitHubAnalyzer:
                     urgent_count += 1
                 if analysis.risk_level in ["high", "critical"]:
                     high_risk_count += 1
+                if analysis.sentiment_label == "positive":
+                    positive_count += 1
             
-            # Risk increase based on NLP findings
-            score += bug_count * 3  # Each bug = +3
-            score += urgent_count * 5  # Each urgent = +5
-            score += high_risk_count * 7  # Each high-risk = +7
-        except:
+            # NLP risk additions (weighted)
+            if len(sampled_commits) > 0:
+                bug_ratio = bug_count / len(sampled_commits)
+                score += int(bug_ratio * 20)      # Up to +20 if all commits are bug fixes
+                score += urgent_count * 4          # Each urgent signal = +4
+                score += high_risk_count * 5       # Each high-risk = +5
+                score -= int(positive_count * 1.5) # Positive signals reduce risk slightly
+        except Exception:
             pass
         
-        # Traditional metrics
-        score += min(issues // 5, 20)  # High issue count
+        # Issue-to-commit ratio risk
+        if commits > 0:
+            issue_ratio = issues / max(commits, 1)
+            if issue_ratio > 2.0:
+                score += 15  # Many more issues than commits
+            elif issue_ratio > 1.0:
+                score += 8
+            elif issue_ratio > 0.5:
+                score += 3
         
+        # Open issue volume
+        if issues > 100:
+            score += 12
+        elif issues > 50:
+            score += 8
+        elif issues > 20:
+            score += 4
+        
+        # Activity risk: no recent commits = stale/abandoned project risk
         if commits == 0:
-            score += 25  # No activity
-        elif commits < 5:
-            score += 15  # Low activity
+            score += 20  # No activity in 30 days
+        elif commits < 3:
+            score += 10  # Very low activity
         
-        if contributors > 20:
-            score += 10  # Many contributors
+        # Contributor coordination risk
+        if contributors > 30:
+            score += 8
+        elif contributors > 15:
+            score += 4
         
-        # Clamp to 0-100
-        return max(0, min(100, score))
-    
+        # Positive: active healthy project gets risk reduction
+        if commits > 20 and issues < 10 and contributors >= 2:
+            score -= 10  # Healthy active project
+        
+        # Always clamp to 0-100 integer
+
     def _calculate_risk_score(self, commits: int, contributors: int, issues: int) -> int:
         """
         Calculate failure risk score (0-100)
@@ -221,7 +275,7 @@ class GitHubAnalyzer:
         return max(0, min(100, score))
     
     def _extract_signals(self, repo) -> List[Dict]:
-        """Extract recent signals (commits, issues, PRs) with NLP analysis"""
+        """Extract recent signals (commits, issues, PRs) with NLP analysis and conflict detection"""
         signals = []
         nlp = get_processor()
         
@@ -286,21 +340,35 @@ class GitHubAnalyzer:
                     }
                 })
             
-            # Recent pull requests - with NLP analysis
+            # Recent pull requests - with NLP analysis and conflict detection
             for pr in repo.get_pulls(state="open")[:2]:
                 pr_text = f"{pr.title} {pr.body or ''}"
                 analysis = nlp.analyze(pr_text)
                 
-                status = "Neutral"
-                if analysis.risk_level in ["high", "critical"]:
+                # Check for merge conflicts
+                has_conflicts = False
+                try:
+                    if pr.mergeable is False or (pr.mergeable is None and self._detect_conflicts_in_diff(pr)):
+                        has_conflicts = True
+                except:
+                    pass
+                
+                # Determine status
+                if has_conflicts:
+                    status = "Urgent"
+                elif analysis.risk_level in ["high", "critical"]:
                     status = "Negative"
                 elif analysis.has_urgency:
                     status = "Urgent"
+                else:
+                    status = "Neutral"
+                
+                conflict_indicator = " [MERGE CONFLICTS]" if has_conflicts else ""
                 
                 signals.append({
                     "id": f"pr-{pr.number}",
                     "timestamp": pr.updated_at.isoformat() + "Z",
-                    "message": f"PR: {pr.title[:60]}",
+                    "message": f"PR: {pr.title[:60]}{conflict_indicator}",
                     "status": status,
                     "source": "alert",
                     "nlp": {
@@ -351,8 +419,268 @@ class GitHubAnalyzer:
         
         return trends
     
-    def _generate_insight(self, repo, metrics: Dict, signals: List) -> Dict:
-        """Generate AI insight based on NLP analysis of signals and metrics"""
+    def _analyze_merge_conflicts(self, repo) -> Dict:
+        """
+        Analyze merge conflicts in pull requests with high accuracy
+        Returns: conflict_data with count, severity, and details
+        """
+        conflict_data = {
+            "total_prs_checked": 0,
+            "prs_with_conflicts": 0,
+            "conflict_severity": "none",  # none, low, medium, high, critical
+            "conflict_risk_score": 0,  # 0-100
+            "conflicts_by_file_type": {},
+            "conflicting_prs": [],
+            "resolution_difficulty": "easy",  # easy, moderate, difficult, complex
+            "metrics": {
+                "avg_conflicts_per_pr": 0,
+                "max_conflicts_in_single_pr": 0,
+                "merge_conflict_rate": 0.0,
+                "files_most_conflicted": []
+            }
+        }
+        
+        try:
+            nlp = get_processor()
+            prs = repo.get_pulls(state="open")
+            all_conflicts = []
+            
+            for pr in prs:
+                conflict_data["total_prs_checked"] += 1
+                
+                try:
+                    # Check if PR has merge conflicts
+                    mergeable = pr.mergeable
+                    
+                    if mergeable is None:
+                        # GitHub is still computing mergeability, check diff
+                        conflicts = self._detect_conflicts_in_diff(pr)
+                    elif not mergeable:
+                        conflicts = self._detect_conflicts_in_diff(pr)
+                    else:
+                        conflicts = []
+                    
+                    if conflicts:
+                        conflict_data["prs_with_conflicts"] += 1
+                        all_conflicts.extend(conflicts)
+                        
+                        # NLP analysis of PR description for resolution complexity
+                        pr_text = f"{pr.title} {pr.body or ''}"
+                        analysis = nlp.analyze(pr_text)
+                        
+                        conflicting_pr_info = {
+                            "pr_number": pr.number,
+                            "title": pr.title,
+                            "files_count": pr.changed_files,
+                            "additions": pr.additions,
+                            "deletions": pr.deletions,
+                            "conflict_count": len(conflicts),
+                            "conflicted_files": [c["file"] for c in conflicts],
+                            "updated_at": pr.updated_at.isoformat() + "Z",
+                            "resolution_difficulty": self._assess_conflict_difficulty(
+                                conflicts, pr, analysis
+                            ),
+                            "nlp_complexity": analysis.risk_level
+                        }
+                        conflict_data["conflicting_prs"].append(conflicting_pr_info)
+                        
+                except Exception as e:
+                    # PR might be closed or inaccessible
+                    pass
+            
+            # Calculate metrics
+            if conflict_data["total_prs_checked"] > 0:
+                conflict_data["metrics"]["merge_conflict_rate"] = round(
+                    conflict_data["prs_with_conflicts"] / conflict_data["total_prs_checked"] * 100, 2
+                )
+            
+            if conflict_data["prs_with_conflicts"] > 0:
+                conflict_data["metrics"]["avg_conflicts_per_pr"] = round(
+                    len(all_conflicts) / conflict_data["prs_with_conflicts"], 1
+                )
+            
+            # Analyze file types and frequency
+            file_conflicts = {}
+            for conflict in all_conflicts:
+                file_type = conflict["file"].split(".")[-1] if "." in conflict["file"] else "unknown"
+                file_conflicts[file_type] = file_conflicts.get(file_type, 0) + 1
+            
+            conflict_data["conflicts_by_file_type"] = file_conflicts
+            
+            # Find most conflicted files
+            if all_conflicts:
+                file_frequency = {}
+                for conflict in all_conflicts:
+                    file_frequency[conflict["file"]] = file_frequency.get(conflict["file"], 0) + 1
+                sorted_files = sorted(file_frequency.items(), key=lambda x: x[1], reverse=True)
+                conflict_data["metrics"]["files_most_conflicted"] = [
+                    {"file": f, "conflict_count": c} for f, c in sorted_files[:5]
+                ]
+                conflict_data["metrics"]["max_conflicts_in_single_pr"] = max(
+                    [c["conflict_count"] for c in conflict_data["conflicting_prs"]], default=0
+                )
+            
+            # Determine overall severity
+            if conflict_data["prs_with_conflicts"] == 0:
+                conflict_data["conflict_severity"] = "none"
+                conflict_data["conflict_risk_score"] = 0
+            elif conflict_data["metrics"]["merge_conflict_rate"] > 50:
+                conflict_data["conflict_severity"] = "critical"
+                conflict_data["conflict_risk_score"] = 95
+            elif conflict_data["metrics"]["merge_conflict_rate"] > 30:
+                conflict_data["conflict_severity"] = "high"
+                conflict_data["conflict_risk_score"] = 75
+            elif conflict_data["metrics"]["merge_conflict_rate"] > 15:
+                conflict_data["conflict_severity"] = "medium"
+                conflict_data["conflict_risk_score"] = 50
+            else:
+                conflict_data["conflict_severity"] = "low"
+                conflict_data["conflict_risk_score"] = 25
+            
+            # Assess overall resolution difficulty
+            if conflict_data["conflicting_prs"]:
+                difficulties = [p["resolution_difficulty"] for p in conflict_data["conflicting_prs"]]
+                difficulty_score = {"easy": 1, "moderate": 2, "difficult": 3, "complex": 4}
+                avg_difficulty = sum(difficulty_score.get(d, 0) for d in difficulties) / len(difficulties)
+                
+                if avg_difficulty > 3:
+                    conflict_data["resolution_difficulty"] = "complex"
+                elif avg_difficulty > 2:
+                    conflict_data["resolution_difficulty"] = "difficult"
+                elif avg_difficulty > 1:
+                    conflict_data["resolution_difficulty"] = "moderate"
+                else:
+                    conflict_data["resolution_difficulty"] = "easy"
+            
+        except Exception as e:
+            conflict_data["error"] = str(e)
+        
+        return conflict_data
+    
+    def _detect_conflicts_in_diff(self, pr) -> List[Dict]:
+        """
+        Analyze PR diff to detect merge conflicts
+        Returns list of conflict details
+        """
+        conflicts = []
+        
+        try:
+            # Get all files in the PR
+            for file_change in pr.get_files():
+                conflict_markers = self._detect_conflict_markers(file_change.patch or "")
+                
+                if conflict_markers:
+                    conflicts.append({
+                        "file": file_change.filename,
+                        "conflict_count": len(conflict_markers),
+                        "additions": file_change.additions,
+                        "deletions": file_change.deletions,
+                        "changes": file_change.changes,
+                        "is_binary": file_change.patch is None,
+                        "conflict_markers": conflict_markers
+                    })
+        except Exception as e:
+            pass
+        
+        return conflicts
+    
+    def _detect_conflict_markers(self, patch: str) -> List[Dict]:
+        """
+        Detect <<<<<<< ======= >>>>>>> conflict markers in patch text
+        Returns list of conflict marker positions
+        """
+        markers = []
+        lines = patch.split('\n')
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            
+            # Look for opening conflict marker
+            if line.startswith('<<<<<<<'):
+                conflict_start = i
+                separator_line = None
+                end_line = None
+                
+                # Find separator and end markers
+                for j in range(i + 1, min(i + 1000, len(lines))):  # Limit search to 1000 lines
+                    if lines[j].startswith('=======') and separator_line is None:
+                        separator_line = j
+                    elif lines[j].startswith('>>>>>>>'):
+                        end_line = j
+                        break
+                
+                if separator_line and end_line:
+                    conflict_block = {
+                        "start": conflict_start,
+                        "separator": separator_line,
+                        "end": end_line,
+                        "lines_in_conflict": end_line - conflict_start + 1,
+                        "branch_a_lines": separator_line - conflict_start - 1,
+                        "branch_b_lines": end_line - separator_line - 1
+                    }
+                    markers.append(conflict_block)
+                    i = end_line
+            
+            i += 1
+        
+        return markers
+    
+    def _assess_conflict_difficulty(self, conflicts: List[Dict], pr, nlp_analysis) -> str:
+        """
+        Assess how difficult it will be to resolve these conflicts
+        """
+        if not conflicts:
+            return "easy"
+        
+        # Scoring factors
+        score = 0
+        
+        # Factor 1: Number of conflicts
+        score += min(len(conflicts) * 10, 30)
+        
+        # Factor 2: File types involved
+        risky_extensions = {'.cs', '.java', '.ts', '.tsx', '.jsx', '.py', '.cpp', '.c', '.h'}
+        for conflict in conflicts:
+            if any(conflict["file"].endswith(ext) for ext in risky_extensions):
+                score += 5
+            # Binary files are very hard to merge
+            if conflict["is_binary"]:
+                score += 15
+        
+        # Factor 3: Size of conflicts
+        total_conflict_lines = sum(c.get("lines_in_conflict", 0) for c in conflicts)
+        score += min(total_conflict_lines // 10, 25)
+        
+        # Factor 4: PR changes magnitude
+        if pr.changed_files > 30:
+            score += 10
+        if pr.additions > 500:
+            score += 5
+        
+        # Factor 5: NLP complexity indicator
+        if nlp_analysis.risk_level in ["high", "critical"]:
+            score += 10
+        if nlp_analysis.has_urgency:
+            score += 5
+        
+        # Categorize difficulty
+        if score > 60:
+            return "complex"
+        elif score > 40:
+            return "difficult"
+        elif score > 20:
+            return "moderate"
+        else:
+            return "easy"
+        
+        return trends
+    
+    def _generate_insight(self, repo, metrics: Dict, signals: List, conflict_data: Dict = None) -> Dict:
+        """Generate AI insight based on NLP analysis of signals, metrics, and merge conflicts"""
+        if conflict_data is None:
+            conflict_data = {}
+        
         risk_score = metrics["failureRiskScore"]
         commits = metrics["metadata"]["commits_30d"]
         issues = metrics["metadata"]["open_issues"]
@@ -370,8 +698,13 @@ class GitHubAnalyzer:
             if signal.get("nlp", {}).get("keywords"):
                 all_keywords.extend(signal.get("nlp", {}).get("keywords", []))
         
-        # Build insight title based on NLP findings
-        if len(high_risk_signals) > 0:
+        # Build insight title based on findings (conflicts take priority)
+        if conflict_data and conflict_data.get("prs_with_conflicts", 0) > 0:
+            if conflict_data["conflict_severity"] in ["critical", "high"]:
+                title = f"Critical: Merge Conflicts Blocking {conflict_data['prs_with_conflicts']} PRs"
+            else:
+                title = f"Attention: Merge Conflicts in Pull Requests"
+        elif len(high_risk_signals) > 0:
             title = "Critical Issues Detected in Repository"
         elif len(bug_signals) >= 2:
             title = "Multiple Bug Fixes Identified"
@@ -384,15 +717,42 @@ class GitHubAnalyzer:
         else:
             title = "Repository Activity Analysis"
         
-        # Build factors from NLP + metrics
+        # Build factors from NLP + metrics + conflicts
         factors = []
+        
+        # Add merge conflict factors (highest priority)
+        if conflict_data:
+            if conflict_data.get("prs_with_conflicts", 0) > 0:
+                if conflict_data["conflict_severity"] == "critical":
+                    factors.append(f"🚨 CRITICAL: {conflict_data['prs_with_conflicts']} PRs with merge conflicts ({conflict_data['metrics']['merge_conflict_rate']}% conflict rate)")
+                elif conflict_data["conflict_severity"] == "high":
+                    factors.append(f"⚠️ HIGH: {conflict_data['prs_with_conflicts']} PRs with merge conflicts, {conflict_data['metrics']['avg_conflicts_per_pr']:.1f} avg conflicts/PR")
+                elif conflict_data["conflict_severity"] == "medium":
+                    factors.append(f"⚠️ MEDIUM: {conflict_data['prs_with_conflicts']} PRs with merge conflicts")
+                else:
+                    factors.append(f"ℹ️ LOW: {conflict_data['prs_with_conflicts']} PR with merge conflicts")
+                
+                # Add file type info
+                if conflict_data.get('conflicts_by_file_type'):
+                    file_types = [f"{ft} ({c})" for ft, c in conflict_data['conflicts_by_file_type'].items()]
+                    factors.append(f"✗ Conflicts in: {', '.join(file_types)}")
+                
+                # Add most conflicted files
+                if conflict_data.get('metrics', {}).get('files_most_conflicted'):
+                    top_file = conflict_data['metrics']['files_most_conflicted'][0]
+                    factors.append(f"📄 Most conflicted: {top_file['file']} ({top_file['conflict_count']} times)")
+                
+                # Add resolution difficulty
+                factors.append(f"🔧 Resolution difficulty: {conflict_data.get('resolution_difficulty', 'unknown')}")
         
         # NLP-based factors
         if len(bug_signals) > 0:
             factors.append(f"Bug fixes detected in {len(bug_signals)} recent signals")
         
-        if len(urgent_signals) > 0:
-            factors.append(f"Urgent items identified: {len(urgent_signals)} signals require attention")
+        if len(urgent_signals) > len([s for s in urgent_signals if "[MERGE CONFLICTS]" in s.get("message", "")]):
+            non_conflict_urgent = len([s for s in urgent_signals if "[MERGE CONFLICTS]" not in s.get("message", "")])
+            if non_conflict_urgent > 0:
+                factors.append(f"Urgent items identified: {non_conflict_urgent} signals require attention")
         
         if len(high_risk_signals) > 0:
             factors.append(f"High-risk signals: {len(high_risk_signals)} items flagged for review")
@@ -423,11 +783,23 @@ class GitHubAnalyzer:
         
         description += " ".join(factors[:3])
         
-        # Generate recommendation based on NLP
-        recommendation = "Recommendations: "
+        # Generate recommendation based on all factors (merge conflicts top priority)
+        recommendation = ""
+        
+        if conflict_data and conflict_data.get("prs_with_conflicts", 0) > 0:
+            if conflict_data["conflict_severity"] in ["critical", "high"]:
+                recommendation = f"🚨 URGENT ACTION REQUIRED: {conflict_data['prs_with_conflicts']} pull request(s) blocked by merge conflicts. "
+                if conflict_data.get("resolution_difficulty") in ["difficult", "complex"]:
+                    recommendation += "Conflicts are complex - recommend pair programming or expert code review. "
+                recommendation += "Establish clear merge strategies, improve branch protection rules, and modernize CI/CD pipeline. "
+            else:
+                recommendation = f"Address merge conflicts in {conflict_data['prs_with_conflicts']} pull request(s). "
+        
+        recommendation += "Recommendations: "
+        
         if len(bug_signals) > 2:
             recommendation += "Prioritize bug fixes and quality assurance testing. "
-        if risk_score > 70:
+        if risk_score > 70 and not recommendation.startswith("🚨"):
             recommendation += "Conduct thorough code review and increase test coverage. "
         if issues > 20:
             recommendation += "Create issue triage process and assign priority labels. "
@@ -448,7 +820,14 @@ class GitHubAnalyzer:
                 "positive_sentiment": sentiment_positive,
                 "negative_sentiment": sentiment_negative,
                 "top_keywords": list(set(all_keywords))[:5]
-            }
+            },
+            "conflict_insights": {
+                "total_prs_checked": conflict_data.get("total_prs_checked", 0),
+                "prs_with_conflicts": conflict_data.get("prs_with_conflicts", 0),
+                "conflict_severity": conflict_data.get("conflict_severity", "none"),
+                "resolution_difficulty": conflict_data.get("resolution_difficulty", "easy"),
+                "conflict_rate": conflict_data.get("metrics", {}).get("merge_conflict_rate", 0)
+            } if conflict_data else None
         }
     
     def _mock_analysis(self, repo_url: str) -> Dict:

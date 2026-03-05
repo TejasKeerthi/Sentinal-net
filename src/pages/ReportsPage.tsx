@@ -34,7 +34,7 @@ export const ReportsPage = ({ data, isLoading, onRefresh }: ReportsPageProps) =>
   };
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-4xl font-bold text-white">Risk Reports</h1>

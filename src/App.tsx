@@ -42,12 +42,14 @@ function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 ml-64 p-8 overflow-auto">
-        {error && (
-          <div className="mb-4 p-4 bg-warning-orange bg-opacity-10 border border-warning-orange border-opacity-50 rounded-lg text-warning-orange">
-            <strong>Connection Status:</strong> {error}
-          </div>
-        )}
-        {renderPage()}
+        <div className="max-w-7xl mx-auto">
+          {error && (
+            <div className="mb-4 p-4 bg-warning-orange bg-opacity-10 border border-warning-orange border-opacity-50 rounded-lg text-warning-orange max-w-6xl mx-auto">
+              <strong>Connection Status:</strong> {error}
+            </div>
+          )}
+          {renderPage()}
+        </div>
       </main>
     </div>
   );

@@ -3,11 +3,12 @@
 @tailwind utilities;
 
 * {
-  @apply transition-colors duration-200;
+  @apply transition-all duration-300;
 }
 
 html {
   @apply bg-darker-charcoal text-white antialiased;
+  scroll-behavior: smooth;
 }
 
 body {
@@ -25,7 +26,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-electric-blue rounded-full;
+  @apply bg-electric-blue rounded-full transition-colors duration-200;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -37,26 +38,289 @@ body {
   @apply w-full min-h-screen bg-darker-charcoal;
 }
 
-/* Custom utility classes */
-.glitch-text {
-  animation: glitch 0.3s infinite;
+/* ============================================================================
+   SMOOTH ANIMATIONS & TRANSITIONS
+   ============================================================================ */
+
+/* Fade in animation for page transitions */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-@keyframes glitch {
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse-glow {
   0%, 100% {
-    text-shadow: -2px 0 #ff6b35, 2px 0 #00d4ff;
+    opacity: 1;
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
   }
   50% {
-    text-shadow: 2px 0 #ff6b35, -2px 0 #00d4ff;
+    opacity: 0.8;
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
   }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cyber-border-pulse {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.2), inset 0 0 10px rgba(0, 212, 255, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.4), inset 0 0 15px rgba(0, 212, 255, 0.2);
+  }
+}
+
+/* Apply fade-in to pages */
+main {
+  animation: fadeIn 0.5s ease-out;
+}
+
+/* Card animations */
+.card-enter {
+  animation: scaleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.slide-right {
+  animation: slideInRight 0.5s ease-out;
+}
+
+.slide-left {
+  animation: slideInLeft 0.5s ease-out;
 }
 
 /* Cyber border glow effect */
 .cyber-border-glow {
   @apply border border-electric-blue;
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.2), inset 0 0 10px rgba(0, 212, 255, 0.1);
+  animation: cyber-border-pulse 3s ease-in-out infinite;
+  transition: all 0.3s ease;
 }
 
 .cyber-border-glow:hover {
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.4), inset 0 0 10px rgba(0, 212, 255, 0.2);
+  box-shadow: 0 0 30px rgba(0, 212, 255, 0.6), inset 0 0 15px rgba(0, 212, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+/* Smooth gradient backgrounds */
+.gradient-bg {
+  background: linear-gradient(-45deg, #1a1a2e, #16213e, #0f0f1e, #1a1a2e);
+  background-size: 400% 400%;
+  animation: gradient-shift 15s ease infinite;
+}
+
+/* Hover lift effect */
+.hover-lift {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 25px rgba(0, 212, 255, 0.2);
+}
+
+/* Button transitions */
+button {
+  @apply transition-all duration-300;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+/* Loading skeleton shimmer */
+.skeleton-loader {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 212, 255, 0.1) 0%,
+    rgba(0, 212, 255, 0.2) 50%,
+    rgba(0, 212, 255, 0.1) 100%
+  );
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* Custom scrollbar for main content */
+main::-webkit-scrollbar {
+  width: 6px;
+}
+
+main::-webkit-scrollbar-thumb {
+  @apply bg-electric-blue bg-opacity-50 rounded-full transition-all;
+}
+
+main::-webkit-scrollbar-thumb:hover {
+  @apply bg-electric-blue bg-opacity-100;
+}
+
+/* Input transitions */
+input, textarea, select {
+  @apply transition-all duration-200;
+}
+
+input:focus, textarea:focus, select:focus {
+  @apply outline-none;
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+}
+
+/* Responsive text sizing */
+@media (max-width: 768px) {
+  h1 {
+    @apply text-2xl;
+  }
+  h2 {
+    @apply text-xl;
+  }
+}
+
+/* Performance optimization */
+@supports (scroll-behavior: smooth) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Neon text effect */
+.neon-text {
+  text-shadow: 0 0 10px #00d4ff, 0 0 20px #00d4ff, 0 0 30px #00d4ff;
+  animation: float-up 0.6s ease-out;
+}
+
+/* Data visualization animations */
+.chart-animate {
+  animation: slideIn Right 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.bar-animate {
+  animation: float-up 0.6s ease-out backwards;
+}
+
+.bar-animate:nth-child(1) { animation-delay: 0s; }
+.bar-animate:nth-child(2) { animation-delay: 0.1s; }
+.bar-animate:nth-child(3) { animation-delay: 0.2s; }
+.bar-animate:nth-child(4) { animation-delay: 0.3s; }
+.bar-animate:nth-child(5) { animation-delay: 0.4s; }
+.bar-animate:nth-child(6) { animation-delay: 0.5s; }
+.bar-animate:nth-child(7) { animation-delay: 0.6s; }
+
+/* Pulse effect for alerts */
+.pulse-alert {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Glitch effect for critical */
+.glitch-critical {
+  position: relative;
+}
+
+.glitch-critical::before {
+  content: attr(data-text);
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  z-index: -1;
+  color: #ff6b35;
+  animation: glitch 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+}
+
+@keyframes glitch {
+  0% {
+    text-shadow: -2px 0 #ff6b35, 2px 0 #00d4ff;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 45%, 0% 58%, 0% 100%, 100% 100%);
+  }
+  14% {
+    text-shadow: -2px 0 #ff6b35, 2px 0 #00d4ff;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 15%, 0% 33%, 0% 58%, 100% 100%, 100% 100%, 0% 100%);
+  }
+  28% {
+    text-shadow: -2px 0 #ff6b35, 2px 0 #00d4ff;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 9%, 0% 58%, 0% 100%, 100% 100%);
+  }
+  42% {
+    text-shadow: -2px 0 #ff6b35, 2px 0 #00d4ff;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 77%, 0% 59%, 0% 100%, 100% 100%);
+  }
+  56% {
+    text-shadow: -2px 0 #ff6b35, 2px 0 #00d4ff;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 12%, 0% 58%, 0% 100%, 100% 100%);
+  }
+  71% {
+    text-shadow: -2px 0 #ff6b35, 2px 0 #00d4ff;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 59%, 0% 58%, 0% 100%, 100% 100%);
+  }
+  85% {
+    text-shadow: -2px 0 #ff6b35, 2px 0 #00d4ff;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 35%, 0% 58%, 0% 100%, 100% 100%);
+  }
+  100% {
+    text-shadow: -2px 0 #ff6b35, 2px 0 #00d4ff;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 58%, 0% 58%, 0% 100%, 100% 100%);
+  }
 }

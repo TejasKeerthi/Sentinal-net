@@ -1,4 +1,4 @@
-import { Github, Search } from 'lucide-react';
+import { Github, Search, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import clsx from 'clsx';
 
@@ -31,56 +31,75 @@ export const GitHubAnalyzer = ({ onAnalyze, isLoading, currentRepo }: GitHubAnal
   ];
 
   return (
-    <div className="bg-gradient-to-br from-cyber-card to-darker-charcoal rounded-xl border border-cyan-500 border-opacity-20 p-6 mb-6">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="p-2 bg-electric-blue bg-opacity-10 rounded-lg">
-          <Github size={24} className="text-electric-blue" />
-        </div>
-        <div>
-          <h2 className="text-xl font-bold text-white">Analyze GitHub Repository</h2>
-          <p className="text-gray-400 text-sm">Real-time analysis of actual projects</p>
-        </div>
-      </div>
+    <div className="bg-gradient-to-br from-cyber-card via-darker-charcoal to-cyber-card rounded-2xl border border-cyan-500 border-opacity-20 p-8 shadow-cyber-glow relative overflow-hidden">    
+      {/* Subtle background pattern */}
+      <div className="absolute inset-0 opacity-5 pointer-events-none" style={{
+        backgroundImage: 'radial-gradient(circle at 20% 50%, #00d4ff 1px, transparent 1px), radial-gradient(circle at 80% 50%, #00d4ff 1px, transparent 1px)',
+        backgroundSize: '40px 40px'
+      }}></div>
 
-      <div className="space-y-4">
-        {/* Input Section */}
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={repoInput}
-            onChange={(e) => setRepoInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="owner/repo (e.g., torvalds/linux)"
-            className="flex-1 px-4 py-2 bg-darker-charcoal border border-cyber-gray rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-electric-blue transition-colors"
-          />
-          <button
-            onClick={handleAnalyze}
-            disabled={isLoading || !repoInput.trim()}
-            className={clsx(
-              'flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all',
-              isLoading || !repoInput.trim()
-                ? 'bg-gray-600 text-gray-300 cursor-not-allowed'
-                : 'bg-electric-blue text-darker-charcoal hover:bg-electric-blue-dark shadow-cyber-glow'
-            )}
-          >
-            <Search size={18} />
-            {isLoading ? 'Analyzing...' : 'Analyze'}
-          </button>
-        </div>
-
-        {/* Current Repo Display */}
-        {currentRepo && (
-          <div className="p-3 bg-green-900 bg-opacity-20 border border-green-700 border-opacity-30 rounded-lg">
-            <p className="text-green-300 text-sm">
-              <span className="font-semibold">Currently analyzing:</span> {currentRepo}
-            </p>
+      <div className="relative z-10">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-6">
+          <div className="p-3 bg-electric-blue bg-opacity-15 rounded-xl border border-electric-blue border-opacity-20">
+            <Github size={28} className="text-electric-blue" />
           </div>
-        )}
+          <div>
+            <h2 className="text-2xl font-bold text-white tracking-tight">Analyze GitHub Repository</h2>
+            <p className="text-gray-400 text-sm mt-0.5">Real-time NLP analysis of commits, issues, and pull requests</p>
+          </div>
+        </div>
 
-        {/* Examples */}
-        <div>
-          <p className="text-gray-500 text-xs mb-2">Popular projects:</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="space-y-5">
+          {/* Input Section */}
+          <div className="flex gap-3">
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                value={repoInput}
+                onChange={(e) => setRepoInput(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="owner/repo (e.g., TejasKeerthi/ART-VAULT)"
+                className="w-full px-5 py-3 bg-darker-charcoal border border-cyber-gray-light rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-electric-blue focus:ring-1 focus:ring-electric-blue focus:ring-opacity-30 transition-all text-base"
+              />
+            </div>
+            <button
+              onClick={handleAnalyze}
+              disabled={isLoading || !repoInput.trim()}
+              className={clsx(
+                'flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 text-base min-w-[140px] justify-center',
+                isLoading || !repoInput.trim()
+                  ? 'bg-gray-600 text-gray-300 cursor-not-allowed opacity-60'
+                  : 'bg-electric-blue text-darker-charcoal hover:bg-electric-blue-dark shadow-cyber-glow hover:shadow-cyber-intense'
+              )}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  Analyzing...
+                </>
+              ) : (
+                <>
+                  <Search size={18} />
+                  Analyze
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Current Repo Display */}
+          {currentRepo && !isLoading && (
+            <div className="p-3 bg-green-900 bg-opacity-15 border border-green-700 border-opacity-30 rounded-xl flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <p className="text-green-300 text-sm">
+                <span className="font-semibold">Currently analyzing:</span> {currentRepo}
+              </p>
+            </div>
+          )}
+
+          {/* Examples Row */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-gray-500 text-xs font-medium uppercase tracking-wider">Popular:</span>
             {examples.map((example) => (
               <button
                 key={example}
@@ -89,19 +108,19 @@ export const GitHubAnalyzer = ({ onAnalyze, isLoading, currentRepo }: GitHubAnal
                   onAnalyze(example);
                 }}
                 disabled={isLoading}
-                className="text-xs px-2 py-1 bg-cyber-gray-light border border-cyber-gray rounded hover:border-electric-blue hover:text-electric-blue transition-all disabled:opacity-50"
+                className="text-xs px-3 py-1.5 bg-cyber-gray-light bg-opacity-50 border border-cyber-gray rounded-lg hover:border-electric-blue hover:text-electric-blue hover:bg-electric-blue hover:bg-opacity-10 transition-all disabled:opacity-50 text-gray-300"
               >
                 {example}
               </button>
             ))}
           </div>
-        </div>
 
-        {/* Info */}
-        <div className="p-3 bg-blue-900 bg-opacity-10 border border-blue-700 border-opacity-20 rounded-lg">
-          <p className="text-gray-300 text-xs">
-            💡 <span className="font-semibold">Tip:</span> Enter any public GitHub repository. The API will analyze commits, issues, and pull requests to calculate reliability metrics.
-          </p>
+          {/* Info Tip */}
+          <div className="p-3 bg-blue-900 bg-opacity-10 border border-blue-700 border-opacity-15 rounded-xl">
+            <p className="text-gray-400 text-xs leading-relaxed">
+              <span className="text-electric-blue font-semibold">Tip:</span> Enter any public GitHub repository. The system will analyze commits, issues, and pull requests using NLP to calculate accurate reliability metrics and risk scores.
+            </p>
+          </div>
         </div>
       </div>
     </div>

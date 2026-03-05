@@ -51,9 +51,9 @@ export const TrendsPage = ({ data, isLoading, onRefresh }: TrendsPageProps) => {
   const stats = calculateStats();
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       {/* Header with Refresh Button */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <h1 className="text-4xl font-bold text-white">Temporal Trends & Analysis</h1>
         <RefreshButton
           onClick={onRefresh}

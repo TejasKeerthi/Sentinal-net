@@ -1,31 +1,134 @@
 /* Responsive layout adjustments */
 
-@media (max-width: 1024px) {
+/* Main layout container */
+main {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2rem;
+  animation: fadeIn 0.5s ease-out;
+  scrollbar-gutter: stable;
+}
+
+/* Large screens (1440px+) */
+@media (min-width: 1440px) {
   main {
-    margin-left: 80px;
-    padding: 1.5rem;
+    padding: 2.5rem 3rem;
+  }
+  
+  h1 {
+    @apply text-5xl;
+  }
+  
+  h2 {
+    @apply text-3xl;
   }
 }
 
-@media (max-width: 768px) {
+/* Tablets and smaller laptops (1024px - 1439px) */
+@media (max-width: 1439px) {
+  main {
+    margin-left: 80px;
+    padding: 1.5rem 2rem;
+  }
+  
+  h1 {
+    @apply text-4xl;
+  }
+  
+  h2 {
+    @apply text-2xl;
+  }
+}
+
+/* Small tablets (768px - 1023px) */
+@media (max-width: 1023px) {
+  main {
+    margin-left: 80px;
+    padding: 1.25rem 1.5rem;
+  }
+  
+  h1 {
+    @apply text-3xl;
+  }
+  
+  h2 {
+    @apply text-xl;
+  }
+}
+
+/* Mobile devices (< 768px) */
+@media (max-width: 767px) {
   main {
     margin-left: 60px;
     padding: 1rem;
   }
 
   h1 {
-    font-size: 1.5rem;
+    font-size: 1.75rem;
   }
 
   h2 {
     font-size: 1.25rem;
   }
+  
+  .grid-cols-1 {
+    grid-template-columns: 1fr;
+  }
+  
+  /* Stack cards vertically on mobile */
+  [class*="grid-cols-"] {
+    @apply grid-cols-1;
+  }
 }
 
-/* Scrollbar styling for better integration */
-main {
-  scrollbar-gutter: stable;
+/* Extra small phones (< 480px) */
+@media (max-width: 479px) {
+  main {
+    margin-left: 50px;
+    padding: 0.75rem;
+  }
+  
+  h1 {
+    font-size: 1.5rem;
+  }
+  
+  h2 {
+    font-size: 1.1rem;
+  }
+  
+  button {
+    @apply text-sm;
+  }
 }
+
+/* Grid containers with smooth animations */
+.grid {
+  animation: fadeIn 0.6s ease-out;
+}
+
+.grid > * {
+  animation: scaleIn 0.4s ease-out backwards;
+}
+
+/* Stagger animation for grid items */
+.grid > *:nth-child(1) { animation-delay: 0.05s; }
+.grid > *:nth-child(2) { animation-delay: 0.1s; }
+.grid > *:nth-child(3) { animation-delay: 0.15s; }
+.grid > *:nth-child(4) { animation-delay: 0.2s; }
+.grid > *:nth-child(5) { animation-delay: 0.25s; }
+.grid > *:nth-child(6) { animation-delay: 0.3s; }
+
+/* Space between items */
+.space-y-6 > * {
+  animation: slideInLeft 0.5s ease-out backwards;
+}
+
+.space-y-6 > *:nth-child(1) { animation-delay: 0.1s; }
+.space-y-6 > *:nth-child(2) { animation-delay: 0.2s; }
+.space-y-6 > *:nth-child(3) { animation-delay: 0.3s; }
+.space-y-6 > *:nth-child(4) { animation-delay: 0.4s; }
+.space-y-6 > *:nth-child(5) { animation-delay: 0.5s; }
 
 /* Ensures proper flex behavior */
 #root {
@@ -33,3 +136,75 @@ main {
   min-height: 100vh;
 }
 
+/* Loading state transitions */
+.loading {
+  @apply opacity-60 pointer-events-none;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Smooth color transitions for status indicators */
+.status-indicator {
+  @apply transition-all duration-500;
+}
+
+.status-indicator.critical {
+  @apply text-red-500 animate-pulse;
+  text-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+}
+
+.status-indicator.warning {
+  @apply text-warning-orange;
+  text-shadow: 0 0 10px rgba(255, 107, 53, 0.3);
+}
+
+.status-indicator.nominal {
+  @apply text-green-400;
+  text-shadow: 0 0 10px rgba(74, 222, 128, 0.3);
+}
+
+/* Smooth bordered containers */
+.bordered-container {
+  @apply border border-cyber-gray-light rounded-lg p-6 transition-all duration-300;
+}
+
+.bordered-container:hover {
+  @apply border-electric-blue shadow-cyber-glow;
+}
+
+/* Card hover effects */
+.card {
+  @apply rounded-lg border border-cyber-gray-light transition-all duration-300;
+}
+
+.card:hover {
+  @apply border-electric-blue translate-y-[-4px] shadow-lg;
+  box-shadow: 0 8px 24px rgba(0, 212, 255, 0.15);
+}
+
+/* Badge animations */
+.badge {
+  @apply inline-block px-3 py-1 rounded-full text-xs font-semibold transition-all;
+}
+
+.badge:hover {
+  @apply scale-110;
+}
+
+/* Smooth text transitions */
+.text-muted {
+  @apply text-gray-400 transition-colors duration-300;
+}
+
+.group:hover .text-muted {
+  @apply text-gray-300;
+}
+
+/* Performance optimization - use GPU acceleration */
+.will-animate {
+  will-change: transform, opacity;
+}
+
+/* Prevent layout shift during animations */
+.stable-layout {
+  contain: layout style paint;
+}
