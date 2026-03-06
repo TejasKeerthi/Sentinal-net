@@ -1,4 +1,4 @@
-import { TrendingUp, BarChart3, PieChart } from 'lucide-react';
+import { TrendingUp, BarChart3, PieChart, Download } from 'lucide-react';
 import { RefreshButton } from '../components/RefreshButton';
 import type { SystemData } from '../types';
 
@@ -33,182 +33,115 @@ export const ReportsPage = ({ data, isLoading, onRefresh }: ReportsPageProps) =>
     URL.revokeObjectURL(url);
   };
 
+  const urgent = data.signals.filter((s) => s.status === 'Urgent').length;
+  const negative = data.signals.filter((s) => s.status === 'Negative').length;
+  const neutral = data.signals.filter((s) => s.status === 'Neutral').length;
+  const total = data.signals.length;
+
+  // Dynamic recommendations based on actual data
+  const getRecommendations = () => {
+    const recs: string[] = [];
+    if (urgent > 0) recs.push(`${urgent} urgent signal${urgent > 1 ? 's' : ''} detected — investigate flagged commits and issues immediately`);
+    if (negative > 0) recs.push(`${negative} negative signal${negative > 1 ? 's' : ''} found — review recent code changes for regressions`);
+    if (data.metrics.failureRiskScore > 60) recs.push('Risk score exceeds 60% — consider pausing feature development for stability sprint');
+    if (data.metrics.failureRiskScore > 30 && data.metrics.failureRiskScore <= 60) recs.push('Moderate risk level — monitor trends closely and address high-priority issues');
+    if (total === 0) recs.push('No signals analyzed yet — enter a GitHub repository to begin analysis');
+    if (recs.length === 0) recs.push('System health is nominal — continue regular development practices');
+    return recs;
+  };
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6 stagger">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-4xl font-bold text-white">Risk Reports</h1>
-        <RefreshButton
-          onClick={onRefresh}
-          isLoading={isLoading}
-          lastUpdated={data.metrics.lastUpdated}
-        />
+      <div className="flex items-center justify-between anim-fade-up">
+        <h1 className="text-3xl font-bold text-white">Risk Reports</h1>
+        <RefreshButton onClick={onRefresh} isLoading={isLoading} lastUpdated={data.metrics.lastUpdated} />
       </div>
 
-      {/* Export Actions */}
-      <div className="bg-cyber-card border border-cyber-gray-light rounded-lg p-6">
-        <h2 className="text-xl font-bold text-white mb-4">Export Reports</h2>
-        <div className="flex gap-4 flex-wrap">
-          <button
-            onClick={handleExportJSON}
-            className="flex items-center gap-2 px-4 py-2 bg-electric-blue bg-opacity-20 border border-electric-blue border-opacity-50 text-electric-blue rounded-lg hover:bg-opacity-30 transition-all"
-          >
-            <BarChart3 size={18} />
-            Export as JSON
+      {/* Export */}
+      <div className="glass-card p-6 anim-fade-up" style={{ animationDelay: '0.08s' }}>
+        <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+          <Download size={18} className="text-accent" />
+          Export Reports
+        </h2>
+        <div className="flex gap-3 flex-wrap">
+          <button onClick={handleExportJSON}
+            className="flex items-center gap-2 px-4 py-2.5 glass rounded-xl text-accent text-sm font-medium transition-all duration-300 hover:bg-white/[0.04]"
+            style={{ borderColor: 'rgba(0,212,255,0.15)' }}>
+            <BarChart3 size={16} /> Export JSON
           </button>
-          <button
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 px-4 py-2 bg-warning-orange bg-opacity-20 border border-warning-orange border-opacity-50 text-warning-orange rounded-lg hover:bg-opacity-30 transition-all"
-          >
-            <PieChart size={18} />
-            Export as CSV
+          <button onClick={handleExportCSV}
+            className="flex items-center gap-2 px-4 py-2.5 glass rounded-xl text-warn text-sm font-medium transition-all duration-300 hover:bg-white/[0.04]"
+            style={{ borderColor: 'rgba(255,140,66,0.15)' }}>
+            <PieChart size={16} /> Export CSV
           </button>
         </div>
       </div>
 
       {/* Report Sections */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Current Status Report */}
-        <div className="bg-cyber-card border border-cyber-gray-light rounded-lg p-6">
-          <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <TrendingUp size={20} />
-            Current Status Report
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* Current Status */}
+        <div className="glass-card p-6 anim-fade-up" style={{ animationDelay: '0.16s' }}>
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <TrendingUp size={18} className="text-warn" />
+            Current Status
           </h2>
-          <div className="space-y-4">
-            <ReportLine
-              label="Failure Risk Score"
-              value={`${data.metrics.failureRiskScore}%`}
-              status="warning"
-            />
-            <ReportLine
-              label="System Health"
-              value={data.metrics.systemHealth}
-              status={data.metrics.systemHealth === 'Nominal' ? 'good' : 'warning'}
-            />
-            <ReportLine
-              label="Total Signals"
-              value={data.signals.length}
-              status="neutral"
-            />
-            <ReportLine
-              label="Critical Issues"
-              value={data.signals.filter((s) => s.status === 'Urgent').length}
-              status="critical"
-            />
+          <div className="space-y-3">
+            {[
+              { label: 'Failure Risk Score', value: `${data.metrics.failureRiskScore}%`, color: data.metrics.failureRiskScore > 60 ? '#ff4d6a' : data.metrics.failureRiskScore > 30 ? '#ff8c42' : '#22c55e' },
+              { label: 'System Health', value: data.metrics.systemHealth, color: data.metrics.systemHealth === 'Nominal' ? '#22c55e' : data.metrics.systemHealth === 'Warning' ? '#ff8c42' : '#ff4d6a' },
+              { label: 'Total Signals', value: `${total}`, color: '#00d4ff' },
+              { label: 'Critical Issues', value: `${urgent}`, color: '#ff4d6a' },
+            ].map((item, i) => (
+              <div key={i} className="flex items-center justify-between p-3 glass rounded-xl">
+                <span className="text-gray-500 text-sm">{item.label}</span>
+                <span className="font-bold" style={{ color: item.color }}>{item.value}</span>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Analysis Summary */}
-        <div className="bg-cyber-card border border-cyber-gray-light rounded-lg p-6">
-          <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <PieChart size={20} />
+        {/* Signal Distribution */}
+        <div className="glass-card p-6 anim-fade-up" style={{ animationDelay: '0.24s' }}>
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <PieChart size={18} className="text-purple" />
             Signal Distribution
           </h2>
           <div className="space-y-4">
-            {(() => {
-              const urgent = data.signals.filter((s) => s.status === 'Urgent').length;
-              const negative = data.signals.filter((s) => s.status === 'Negative').length;
-              const neutral = data.signals.filter((s) => s.status === 'Neutral').length;
-              const total = data.signals.length;
-
+            {[
+              { label: 'Urgent', value: urgent, color: '#ff4d6a' },
+              { label: 'Negative', value: negative, color: '#ff8c42' },
+              { label: 'Neutral', value: neutral, color: '#22c55e' },
+            ].map((item, i) => {
+              const pct = total > 0 ? (item.value / total) * 100 : 0;
               return (
-                <>
-                  <ProgressBar
-                    label="Urgent"
-                    value={urgent}
-                    total={total}
-                    color="bg-red-600"
-                  />
-                  <ProgressBar
-                    label="Negative"
-                    value={negative}
-                    total={total}
-                    color="bg-warning-orange"
-                  />
-                  <ProgressBar
-                    label="Neutral"
-                    value={neutral}
-                    total={total}
-                    color="bg-green-600"
-                  />
-                </>
+                <div key={i}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-gray-400 text-sm">{item.label}</span>
+                    <span className="text-white text-sm font-semibold">{item.value}/{total} ({pct.toFixed(0)}%)</span>
+                  </div>
+                  <div className="w-full h-2 bg-white/[0.04] rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-700"
+                      style={{ width: `${pct}%`, backgroundColor: item.color, boxShadow: `0 0 10px ${item.color}44` }} />
+                  </div>
+                </div>
               );
-            })()}
+            })}
           </div>
         </div>
       </div>
 
       {/* Recommendations */}
-      <div className="bg-gradient-to-r from-blue-900 from-opacity-20 to-transparent border border-blue-700 border-opacity-30 rounded-lg p-6">
-        <h2 className="text-xl font-bold text-blue-300 mb-4">Automated Recommendations</h2>
-        <ul className="space-y-2 text-gray-300">
-          <li className="flex items-start gap-3">
-            <span className="text-blue-400 mt-1">→</span>
-            <span>Immediate investigation required for WebSocket memory leak identified in recent commits</span>
-          </li>
-          <li className="flex items-start gap-3">
-            <span className="text-blue-400 mt-1">→</span>
-            <span>Authentication module regression affecting 12% of user sessions - rollback or hotfix recommended</span>
-          </li>
-          <li className="flex items-start gap-3">
-            <span className="text-blue-400 mt-1">→</span>
-            <span>Implement circuit breaker pattern for traffic spike mitigation</span>
-          </li>
-          <li className="flex items-start gap-3">
-            <span className="text-blue-400 mt-1">→</span>
-            <span>Schedule emergency code review session for development irregularity normalization</span>
-          </li>
+      <div className="glass-card p-6 anim-fade-up" style={{ animationDelay: '0.32s', borderColor: 'rgba(0,212,255,0.08)' }}>
+        <h2 className="text-lg font-bold text-accent mb-4">Automated Recommendations</h2>
+        <ul className="space-y-2">
+          {getRecommendations().map((rec, i) => (
+            <li key={i} className="flex items-start gap-3 text-gray-400 text-sm">
+              <span className="text-accent mt-0.5">→</span>
+              <span>{rec}</span>
+            </li>
+          ))}
         </ul>
-      </div>
-    </div>
-  );
-};
-
-interface ReportLineProps {
-  label: string;
-  value: string | number;
-  status: 'good' | 'warning' | 'critical' | 'neutral';
-}
-
-const ReportLine = ({ label, value, status }: ReportLineProps) => {
-  const statusColor: Record<string, string> = {
-    good: 'text-green-400',
-    warning: 'text-warning-orange',
-    critical: 'text-red-400',
-    neutral: 'text-electric-blue',
-  };
-
-  return (
-    <div className="flex items-center justify-between p-3 bg-darker-charcoal rounded-lg">
-      <span className="text-gray-400">{label}</span>
-      <span className={`font-bold ${statusColor[status]}`}>{value}</span>
-    </div>
-  );
-};
-
-interface ProgressBarProps {
-  label: string;
-  value: number;
-  total: number;
-  color: string;
-}
-
-const ProgressBar = ({ label, value, total, color }: ProgressBarProps) => {
-  const percentage = total > 0 ? (value / total) * 100 : 0;
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-gray-400 text-sm">{label}</span>
-        <span className="text-white font-semibold">
-          {value}/{total} ({percentage.toFixed(0)}%)
-        </span>
-      </div>
-      <div className="w-full bg-darker-charcoal rounded-full h-2">
-        <div
-          className={`${color} h-2 rounded-full transition-all duration-300`}
-          style={{ width: `${percentage}%` }}
-        ></div>
       </div>
     </div>
   );

@@ -5,3 +5,8 @@ export { TemporalChart } from './TemporalChart';
 export { AIInsightsPanel } from './AIInsightsPanel';
 export { RefreshButton } from './RefreshButton';
 export { GitHubAnalyzer } from './GitHubAnalyzer';
+export { AmbientBackground } from './AmbientBackground';
+export { CodeDNAHelix } from './CodeDNAHelix';
+export { RiskRadar } from './RiskRadar';
+export { CommitPulseMonitor } from './CommitPulseMonitor';
+export { SentimentOrb } from './SentimentOrb';

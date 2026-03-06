@@ -26,20 +26,24 @@ export const RefreshButton = ({ onClick, isLoading, lastUpdated }: RefreshButton
         onClick={onClick}
         disabled={isLoading}
         className={clsx(
-          'flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all duration-200',
+          'flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold transition-all duration-300 text-sm',
           isLoading
-            ? 'bg-gray-600 text-gray-300 cursor-not-allowed'
-            : 'bg-gradient-to-r from-electric-blue to-electric-blue-dark hover:from-electric-blue hover:to-electric-blue text-darker-charcoal shadow-cyber-glow hover:shadow-cyber-intense'
+            ? 'glass text-gray-500 cursor-not-allowed'
+            : 'text-void hover-lift'
         )}
+        style={!isLoading ? {
+          background: 'linear-gradient(135deg, #00d4ff, #38bdf8)',
+          boxShadow: '0 0 20px rgba(0,212,255,0.25)',
+        } : undefined}
       >
         <RefreshCw
-          size={18}
+          size={16}
           className={clsx('transition-transform', isLoading && 'animate-spin')}
         />
-        <span>{isLoading ? 'Analyzing...' : 'Refresh Analysis'}</span>
+        <span>{isLoading ? 'Analyzing...' : 'Refresh'}</span>
       </button>
-      <span className="text-gray-400 text-sm">
-        Last update: <span className="text-electric-blue">{formatLastUpdated(lastUpdated)}</span>
+      <span className="text-gray-500 text-xs font-mono">
+        {formatLastUpdated(lastUpdated)}
       </span>
     </div>
   );

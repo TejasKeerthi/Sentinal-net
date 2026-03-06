@@ -7,59 +7,66 @@ interface AIInsightsPanelProps {
 
 export const AIInsightsPanel = ({ insight }: AIInsightsPanelProps) => {
   return (
-    <div className="bg-gradient-to-br from-cyber-card to-darker-charcoal rounded-xl border border-electric-blue border-opacity-30 p-6 shadow-cyber-glow">
+    <div className="glass-card p-6 anim-fade-up relative overflow-hidden" style={{ animationDelay: '0.25s' }}>
+      {/* Ambient glow */}
+      <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full opacity-10 blur-3xl pointer-events-none"
+        style={{ background: 'radial-gradient(circle, #a855f7, transparent 70%)' }} />
+
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <div className="p-2 bg-electric-blue bg-opacity-20 rounded-lg">
-          <Zap size={24} className="text-electric-blue" />
+        <div className="p-2 rounded-xl glass" style={{ boxShadow: '0 0 16px rgba(168,85,247,0.12)' }}>
+          <Zap size={20} className="text-purple" />
         </div>
         <div>
-          <h2 className="text-2xl font-bold text-white">Explainable GenAI Insights</h2>
-          <p className="text-gray-400 text-sm">AI-powered risk analysis & recommendations</p>
+          <h2 className="text-lg font-bold text-white">GenAI Insights</h2>
+          <p className="text-gray-600 text-xs">AI-powered risk analysis</p>
         </div>
       </div>
 
       {/* Main Insight */}
-      <div className="mb-8 p-4 bg-electric-blue bg-opacity-5 border border-electric-blue border-opacity-20 rounded-lg">
-        <h3 className="text-electric-blue font-bold mb-2">{insight.title}</h3>
-        <p className="text-gray-300 leading-relaxed">{insight.description}</p>
+      <div className="mb-6 p-4 glass rounded-xl" style={{ borderColor: 'rgba(168,85,247,0.1)' }}>
+        <h3 className="text-accent font-bold text-sm mb-2">{insight.title}</h3>
+        <p className="text-gray-400 text-sm leading-relaxed">{insight.description}</p>
       </div>
 
       {/* Contributing Factors */}
-      <div className="mb-8">
-        <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-          <AlertCircle size={18} className="text-warning-orange" />
+      <div className="mb-6">
+        <h3 className="text-white font-semibold text-sm mb-3 flex items-center gap-2">
+          <AlertCircle size={14} className="text-warn" />
           Contributing Factors
         </h3>
-        <div className="space-y-3">
+        <div className="space-y-2">
           {insight.factors.map((factor, index) => (
-            <div key={index} className="flex items-start gap-3 p-3 bg-cyber-gray-light rounded-lg hover:border-electric-blue border border-transparent transition-colors">
-              <div className="w-2 h-2 bg-warning-orange rounded-full mt-2 flex-shrink-0"></div>
-              <p className="text-gray-300 text-sm">{factor}</p>
+            <div key={index} className="flex items-start gap-2.5 p-2.5 glass rounded-lg transition-all duration-300 hover:bg-white/[0.04]">
+              <div className="w-1.5 h-1.5 bg-warn rounded-full mt-1.5 flex-shrink-0" />
+              <p className="text-gray-400 text-xs leading-relaxed">{factor}</p>
             </div>
           ))}
         </div>
       </div>
 
       {/* Recommendation */}
-      <div className="p-4 bg-gradient-to-r from-green-900 from-opacity-20 to-transparent border border-green-700 border-opacity-30 rounded-lg">
-        <h3 className="text-green-400 font-bold mb-3 flex items-center gap-2">
-          <BookOpen size={18} />
+      <div className="p-4 glass rounded-xl" style={{ borderColor: 'rgba(34,197,94,0.1)' }}>
+        <h3 className="text-success font-semibold text-sm mb-2 flex items-center gap-2">
+          <BookOpen size={14} />
           Recommended Actions
         </h3>
-        <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-line">
+        <p className="text-gray-400 text-xs leading-relaxed whitespace-pre-line">
           {insight.recommendation}
         </p>
       </div>
 
-      {/* AI Confidence Indicator */}
-      <div className="mt-6 pt-4 border-t border-cyber-gray">
+      {/* AI Confidence */}
+      <div className="mt-5 pt-4 border-t border-white/[0.04]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-electric-blue rounded-full animate-pulse"></div>
-            <span className="text-gray-500 text-xs">AI Confidence: High (92%)</span>
+            <div className="relative">
+              <div className="w-2 h-2 bg-accent rounded-full" />
+              <div className="absolute inset-0 w-2 h-2 bg-accent rounded-full animate-ping opacity-30" />
+            </div>
+            <span className="text-gray-600 text-[10px]">AI Confidence: High (92%)</span>
           </div>
-          <span className="text-gray-500 text-xs">Last Analysis: Just now</span>
+          <span className="text-gray-600 text-[10px]">Last Analysis: Just now</span>
         </div>
       </div>
     </div>

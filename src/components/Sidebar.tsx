@@ -1,4 +1,4 @@
-import { BarChart3, TrendingUp, AlertTriangle, LayoutDashboard } from 'lucide-react';
+import { BarChart3, TrendingUp, AlertTriangle, LayoutDashboard, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import clsx from 'clsx';
 
@@ -20,57 +20,116 @@ export const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
   return (
     <div
       className={clsx(
-        'fixed left-0 top-0 h-full bg-darker-charcoal border-r border-electric-blue transition-all duration-300 z-50',
+        'fixed left-0 top-0 h-full glass-strong z-50 transition-all duration-500 ease-out',
         isCollapsed ? 'w-20' : 'w-64'
       )}
+      style={{
+        borderRight: '1px solid rgba(255,255,255,0.06)',
+      }}
     >
+      {/* Ambient gradient at top */}
+      <div className="absolute top-0 left-0 right-0 h-32 pointer-events-none"
+        style={{ background: 'linear-gradient(180deg, rgba(0,212,255,0.04) 0%, transparent 100%)' }} />
+
       {/* Header */}
-      <div className="p-6 border-b border-cyber-gray flex items-center justify-between">
+      <div className="relative p-6 border-b border-white/[0.06] flex items-center justify-between">
         {!isCollapsed && (
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-electric-blue to-warning-orange rounded-lg flex items-center justify-center">
-              <span className="text-darker-charcoal font-bold text-sm">SN</span>
+          <div className="flex items-center gap-3 anim-fade-in">
+            <div className="relative w-9 h-9 rounded-xl flex items-center justify-center overflow-hidden"
+              style={{
+                background: 'linear-gradient(135deg, #00d4ff 0%, #a855f7 50%, #ff8c42 100%)',
+                boxShadow: '0 0 20px rgba(0,212,255,0.3)',
+              }}>
+              <span className="text-white font-black text-xs tracking-wider">SN</span>
             </div>
-            <span className="text-electric-blue font-bold text-sm">SENTINEL-NET</span>
+            <div>
+              <span className="gradient-text font-black text-sm tracking-wide">SENTINEL-NET</span>
+              <div className="text-[9px] text-gray-500 font-medium tracking-widest uppercase">NLP Analytics</div>
+            </div>
+          </div>
+        )}
+        {isCollapsed && (
+          <div className="w-9 h-9 mx-auto rounded-xl flex items-center justify-center"
+            style={{
+              background: 'linear-gradient(135deg, #00d4ff 0%, #a855f7 50%, #ff8c42 100%)',
+              boxShadow: '0 0 20px rgba(0,212,255,0.3)',
+            }}>
+            <span className="text-white font-black text-xs">SN</span>
           </div>
         )}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-1 hover:bg-cyber-gray-light rounded transition-colors"
+          className={clsx(
+            'p-1.5 rounded-lg transition-all duration-300 hover:bg-white/[0.06] text-gray-500 hover:text-accent',
+            isCollapsed && 'mx-auto mt-3'
+          )}
         >
-          {isCollapsed ? '→' : '←'}
+          {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
       </div>
 
       {/* Navigation */}
-      <nav className="p-4 space-y-2">
-        {navItems.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => onTabChange(id)}
-            className={clsx(
-              'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200',
-              activeTab === id
-                ? 'bg-cyber-gray-light border-l-2 border-electric-blue text-electric-blue'
-                : 'text-gray-400 hover:text-electric-blue hover:bg-cyber-gray'
-            )}
-            title={isCollapsed ? label : undefined}
-          >
-            <Icon size={20} />
-            {!isCollapsed && <span className="text-sm font-medium">{label}</span>}
-          </button>
-        ))}
+      <nav className="p-3 space-y-1 mt-2">
+        {navItems.map(({ id, label, icon: Icon }) => {
+          const isActive = activeTab === id;
+          return (
+            <button
+              key={id}
+              onClick={() => onTabChange(id)}
+              className={clsx(
+                'w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 relative group',
+                isActive
+                  ? 'text-white'
+                  : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03]'
+              )}
+              title={isCollapsed ? label : undefined}
+            >
+              {/* Active indicator glow */}
+              {isActive && (
+                <div className="absolute inset-0 rounded-xl"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(0,212,255,0.08) 0%, rgba(168,85,247,0.04) 100%)',
+                    border: '1px solid rgba(0,212,255,0.15)',
+                    boxShadow: '0 0 20px rgba(0,212,255,0.08), inset 0 1px 0 rgba(255,255,255,0.05)',
+                  }}
+                />
+              )}
+              {/* Active left bar */}
+              {isActive && (
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-full"
+                  style={{
+                    background: 'linear-gradient(180deg, #00d4ff, #a855f7)',
+                    boxShadow: '0 0 12px rgba(0,212,255,0.5)',
+                  }}
+                />
+              )}
+              <Icon size={20} className={clsx(
+                'relative z-10 transition-all duration-300',
+                isActive ? 'text-accent' : 'group-hover:text-accent/70'
+              )} />
+              {!isCollapsed && (
+                <span className={clsx(
+                  'text-sm font-medium relative z-10 transition-all duration-300',
+                  isActive && 'gradient-text-subtle font-semibold'
+                )}>{label}</span>
+              )}
+            </button>
+          );
+        })}
       </nav>
 
       {/* Footer Status */}
       {!isCollapsed && (
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-cyber-gray bg-darker-charcoal">
-          <div className="text-xs text-gray-500">
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-white/[0.04]">
+          <div className="text-xs text-gray-600">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span>System Active</span>
+              <div className="relative">
+                <div className="w-2 h-2 bg-success rounded-full" />
+                <div className="absolute inset-0 w-2 h-2 bg-success rounded-full animate-ping opacity-40" />
+              </div>
+              <span className="text-gray-400">System Active</span>
             </div>
-            <div className="text-gray-600">Last update: now</div>
+            <div className="text-gray-600 font-mono text-[10px]">v2.0 — Liquid Glass</div>
           </div>
         </div>
       )}

@@ -11,40 +11,35 @@ export const TemporalChart = ({ data }: TemporalChartProps) => {
   const avgDevIrregularity = data.length > 0 ? Math.round(data.reduce((sum, d) => sum + d.devIrregularity, 0) / data.length) : 0;
 
   return (
-    <div 
-      className="bg-gradient-to-br from-cyber-card to-darker-charcoal rounded-xl border border-cyber-gray-light p-6 cyber-border-glow hover-lift"
-      style={{
-        animation: 'slideInRight 0.7s ease-out'
-      }}
-    >
+    <div className="glass-card p-6 anim-fade-up relative overflow-hidden" style={{ animationDelay: '0.15s' }}>
+      {/* Ambient glow */}
+      <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full opacity-10 blur-3xl pointer-events-none"
+        style={{ background: 'radial-gradient(circle, #ff8c42, transparent 70%)' }} />
+
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <TrendingUp size={28} className="text-electric-blue neon-text" />
-            Temporal Trends & Analysis
+          <h2 className="text-xl font-bold text-white flex items-center gap-3">
+            <div className="p-2 rounded-xl glass" style={{ boxShadow: '0 0 16px rgba(255,140,66,0.12)' }}>
+              <TrendingUp size={20} className="text-warn" />
+            </div>
+            Temporal Trends
           </h2>
-          <p className="text-gray-400 text-xs mt-1">24-hour trend visualization with ML-powered insights</p>
+          <p className="text-gray-600 text-xs mt-1 ml-12">24-hour trend visualization with ML insights</p>
         </div>
       </div>
 
-      <div className="w-full h-96 chart-animate">
+      <div className="w-full h-80">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart 
-            data={data} 
-            margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
-          >
+          <LineChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
             <defs>
-              {/* Gradient for Bug Growth */}
               <linearGradient id="bugGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#ff6b35" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="#ff6b35" stopOpacity={0.1} />
+                <stop offset="5%" stopColor="#ff8c42" stopOpacity={0.6} />
+                <stop offset="95%" stopColor="#ff8c42" stopOpacity={0} />
               </linearGradient>
-              {/* Gradient for Dev Irregularity */}
               <linearGradient id="devGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#00d4ff" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="#00d4ff" stopOpacity={0.1} />
+                <stop offset="5%" stopColor="#00d4ff" stopOpacity={0.6} />
+                <stop offset="95%" stopColor="#00d4ff" stopOpacity={0} />
               </linearGradient>
-              {/* Glow filter */}
               <filter id="glow">
                 <feGaussianBlur stdDeviation="2" result="coloredBlur" />
                 <feMerge>
@@ -54,121 +49,68 @@ export const TemporalChart = ({ data }: TemporalChartProps) => {
               </filter>
             </defs>
             
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="#16213e"
-              vertical={false}
-              horizontalPoints={[0, 50, 100]}
-            />
-            
-            <XAxis
-              dataKey="timestamp"
-              stroke="#666"
-              style={{ fontSize: '12px' }}
-              tick={{ fill: '#888' }}
-              axisLine={{ stroke: '#16213e' }}
-            />
-            
-            <YAxis 
-              stroke="#666" 
-              style={{ fontSize: '12px' }} 
-              tick={{ fill: '#888' }}
-              axisLine={{ stroke: '#16213e' }}
-            />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
+            <XAxis dataKey="timestamp" stroke="#333" tick={{ fill: '#555', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.04)' }} />
+            <YAxis stroke="#333" tick={{ fill: '#555', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.04)' }} />
             
             <Tooltip
               contentStyle={{
-                backgroundColor: '#0f0f1e',
-                border: '2px solid #00d4ff',
-                borderRadius: '8px',
-                boxShadow: '0 0 20px rgba(0, 212, 255, 0.3)',
-                transition: 'all 0.3s ease'
+                background: 'rgba(10,10,20,0.9)',
+                backdropFilter: 'blur(20px)',
+                border: '1px solid rgba(0,212,255,0.15)',
+                borderRadius: '12px',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
               }}
-              labelStyle={{ color: '#00d4ff', fontWeight: 'bold' }}
-              formatter={(value: any) => [
-                value,
-                typeof value === 'number' ? `${value}%` : value
-              ]}
-              cursor={{ stroke: '#00d4ff', opacity: 0.5 }}
-              separator=" : "
+              labelStyle={{ color: '#00d4ff', fontWeight: 600, fontSize: 12 }}
+              formatter={(value: number) => [`${value}%`]}
+              cursor={{ stroke: 'rgba(0,212,255,0.1)' }}
             />
             
             <Legend
-              wrapperStyle={{ 
-                fontSize: '12px', 
-                color: '#999',
-                paddingTop: '20px',
-                transition: 'all 0.3s'
-              }}
-              formatter={(value: any) => {
-                if (value === 'bugGrowth') return '🔴 Bug Growth Rate';
-                if (value === 'devIrregularity') return '🔵 Dev Irregularity';
+              wrapperStyle={{ fontSize: '11px', color: '#666', paddingTop: '16px' }}
+              formatter={(value: string) => {
+                if (value === 'bugGrowth') return 'Bug Growth Rate';
+                if (value === 'devIrregularity') return 'Dev Irregularity';
                 return value;
               }}
               verticalAlign="bottom"
               height={36}
             />
             
-            {/* Bug Growth Line */}
-            <Line
-              type="monotone"
-              dataKey="bugGrowth"
-              stroke="#ff6b35"
-              fill="url(#bugGradient)"
-              name="bugGrowth"
-              strokeWidth={3}
-              dot={{ fill: '#ff6b35', r: 5, filter: 'url(#glow)' }}
-              activeDot={{ r: 8, fill: '#ff8555', filter: 'url(#glow)' }}
-              isAnimationActive={true}
-              animationDuration={800}
-            />
+            <Line type="monotone" dataKey="bugGrowth" stroke="#ff8c42" fill="url(#bugGradient)" name="bugGrowth"
+              strokeWidth={2.5} dot={{ fill: '#ff8c42', r: 4, strokeWidth: 0 }}
+              activeDot={{ r: 7, fill: '#ff8c42', filter: 'url(#glow)' }}
+              isAnimationActive={true} animationDuration={800} />
             
-            {/* Dev Irregularity Line */}
-            <Line
-              type="monotone"
-              dataKey="devIrregularity"
-              stroke="#00d4ff"
-              fill="url(#devGradient)"
-              name="devIrregularity"
-              strokeWidth={3}
-              dot={{ fill: '#00d4ff', r: 5, filter: 'url(#glow)' }}
-              activeDot={{ r: 8, fill: '#33e0ff', filter: 'url(#glow)' }}
-              isAnimationActive={true}
-              animationDuration={800}
-            />
+            <Line type="monotone" dataKey="devIrregularity" stroke="#00d4ff" fill="url(#devGradient)" name="devIrregularity"
+              strokeWidth={2.5} dot={{ fill: '#00d4ff', r: 4, strokeWidth: 0 }}
+              activeDot={{ r: 7, fill: '#00d4ff', filter: 'url(#glow)' }}
+              isAnimationActive={true} animationDuration={800} />
           </LineChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Analysis Metrics */}
-      <div className="mt-6 grid grid-cols-2 gap-4">
-        <div className="p-4 bg-orange-900 bg-opacity-20 border border-orange-700 border-opacity-50 rounded-lg transition-all duration-300 hover:bg-opacity-30">
-          <div className="text-warning-orange text-xs font-semibold mb-1">Bug Growth Average</div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-warning-orange">{avgBugGrowth}</span>
-            <span className="text-xs text-gray-500">% avg</span>
+      {/* Metric pills */}
+      <div className="mt-5 grid grid-cols-2 gap-3">
+        <div className="glass p-4 rounded-xl">
+          <div className="text-warn text-[11px] font-semibold mb-1">Bug Growth Avg</div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-bold text-warn">{avgBugGrowth}</span>
+            <span className="text-[10px] text-gray-600">% avg</span>
           </div>
         </div>
-        
-        <div className="p-4 bg-electric-blue bg-opacity-20 border border-electric-blue border-opacity-50 rounded-lg transition-all duration-300 hover:bg-opacity-30">
-          <div className="text-electric-blue text-xs font-semibold mb-1">Dev Irregularity Average</div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-electric-blue">{avgDevIrregularity}</span>
-            <span className="text-xs text-gray-500">% avg</span>
+        <div className="glass p-4 rounded-xl">
+          <div className="text-accent text-[11px] font-semibold mb-1">Dev Irregularity Avg</div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-bold text-accent">{avgDevIrregularity}</span>
+            <span className="text-[10px] text-gray-600">% avg</span>
           </div>
         </div>
       </div>
 
-      {/* Insight Box */}
-      <div 
-        className="mt-6 p-4 bg-cyber-gray-light border border-cyan-700 border-opacity-30 rounded-lg transition-all duration-300 hover:border-opacity-60"
-        style={{
-          animation: 'slideInLeft 0.7s ease-out 0.2s backwards'
-        }}
-      >
-        <p className="text-gray-300 text-sm leading-relaxed">
-          <span className="text-electric-blue font-semibold">📊 Temporal Analysis:</span> {avgBugGrowth > 30 ? 'High' : 'Moderate'} bug growth combined with {avgDevIrregularity > 20 ? 'significant' : 'moderate'} development irregularity indicates {avgBugGrowth > 30 && avgDevIrregularity > 20 ? 'elevated system instability requiring immediate attention' : 'stable system performance with monitoring'}. Trend shows {data.length > 1 && data[data.length - 1].bugGrowth > data[0].bugGrowth ? '↗️ increasing' : '↘️ decreasing'} pattern.
-        </p>
+      {/* Insight */}
+      <div className="mt-4 p-3 glass rounded-xl text-gray-400 text-xs leading-relaxed">
+        <span className="text-accent font-semibold">Analysis:</span> {avgBugGrowth > 30 ? 'High' : 'Moderate'} bug growth with {avgDevIrregularity > 20 ? 'significant' : 'moderate'} dev irregularity indicates {avgBugGrowth > 30 && avgDevIrregularity > 20 ? 'elevated instability requiring attention' : 'stable performance'}. Trend: {data.length > 1 && data[data.length - 1].bugGrowth > data[0].bugGrowth ? 'increasing' : 'decreasing'}.
       </div>
     </div>
   );

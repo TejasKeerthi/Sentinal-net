@@ -31,22 +31,23 @@ export const GitHubAnalyzer = ({ onAnalyze, isLoading, currentRepo }: GitHubAnal
   ];
 
   return (
-    <div className="bg-gradient-to-br from-cyber-card via-darker-charcoal to-cyber-card rounded-2xl border border-cyan-500 border-opacity-20 p-8 shadow-cyber-glow relative overflow-hidden">    
-      {/* Subtle background pattern */}
-      <div className="absolute inset-0 opacity-5 pointer-events-none" style={{
-        backgroundImage: 'radial-gradient(circle at 20% 50%, #00d4ff 1px, transparent 1px), radial-gradient(circle at 80% 50%, #00d4ff 1px, transparent 1px)',
-        backgroundSize: '40px 40px'
-      }}></div>
+    <div className="glass-card p-8 anim-fade-up relative overflow-hidden">
+      {/* Ambient glow */}
+      <div className="absolute -top-20 -left-20 w-60 h-60 rounded-full opacity-10 blur-3xl pointer-events-none"
+        style={{ background: 'radial-gradient(circle, #00d4ff, transparent 70%)' }} />
+      <div className="absolute -bottom-20 -right-20 w-40 h-40 rounded-full opacity-10 blur-3xl pointer-events-none"
+        style={{ background: 'radial-gradient(circle, #a855f7, transparent 70%)' }} />
 
       <div className="relative z-10">
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
-          <div className="p-3 bg-electric-blue bg-opacity-15 rounded-xl border border-electric-blue border-opacity-20">
-            <Github size={28} className="text-electric-blue" />
+          <div className="p-3 rounded-xl glass"
+            style={{ boxShadow: '0 0 20px rgba(0,212,255,0.15)' }}>
+            <Github size={26} className="text-accent" />
           </div>
           <div>
             <h2 className="text-2xl font-bold text-white tracking-tight">Analyze GitHub Repository</h2>
-            <p className="text-gray-400 text-sm mt-0.5">Real-time NLP analysis of commits, issues, and pull requests</p>
+            <p className="text-gray-500 text-sm mt-0.5">Real-time NLP analysis of commits, issues, and pull requests</p>
           </div>
         </div>
 
@@ -60,18 +61,23 @@ export const GitHubAnalyzer = ({ onAnalyze, isLoading, currentRepo }: GitHubAnal
                 onChange={(e) => setRepoInput(e.target.value)}
                 onKeyPress={handleKeyPress}
                 placeholder="owner/repo (e.g., TejasKeerthi/ART-VAULT)"
-                className="w-full px-5 py-3 bg-darker-charcoal border border-cyber-gray-light rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-electric-blue focus:ring-1 focus:ring-electric-blue focus:ring-opacity-30 transition-all text-base"
+                className="w-full px-5 py-3.5 glass rounded-xl text-white placeholder-gray-600 text-base transition-all duration-300 focus:border-accent/30"
+                style={{ border: '1px solid rgba(255,255,255,0.06)' }}
               />
             </div>
             <button
               onClick={handleAnalyze}
               disabled={isLoading || !repoInput.trim()}
               className={clsx(
-                'flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 text-base min-w-[140px] justify-center',
+                'flex items-center gap-2 px-6 py-3.5 rounded-xl font-semibold transition-all duration-300 text-base min-w-[140px] justify-center',
                 isLoading || !repoInput.trim()
-                  ? 'bg-gray-600 text-gray-300 cursor-not-allowed opacity-60'
-                  : 'bg-electric-blue text-darker-charcoal hover:bg-electric-blue-dark shadow-cyber-glow hover:shadow-cyber-intense'
+                  ? 'glass text-gray-500 cursor-not-allowed opacity-50'
+                  : 'text-void hover-lift'
               )}
+              style={!(isLoading || !repoInput.trim()) ? {
+                background: 'linear-gradient(135deg, #00d4ff, #38bdf8)',
+                boxShadow: '0 0 24px rgba(0,212,255,0.3)',
+              } : undefined}
             >
               {isLoading ? (
                 <>
@@ -89,17 +95,21 @@ export const GitHubAnalyzer = ({ onAnalyze, isLoading, currentRepo }: GitHubAnal
 
           {/* Current Repo Display */}
           {currentRepo && !isLoading && (
-            <div className="p-3 bg-green-900 bg-opacity-15 border border-green-700 border-opacity-30 rounded-xl flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <p className="text-green-300 text-sm">
-                <span className="font-semibold">Currently analyzing:</span> {currentRepo}
+            <div className="glass p-3 rounded-xl flex items-center gap-2"
+              style={{ borderColor: 'rgba(34,197,94,0.15)' }}>
+              <div className="relative">
+                <div className="w-2 h-2 bg-success rounded-full" />
+                <div className="absolute inset-0 w-2 h-2 bg-success rounded-full animate-ping opacity-40" />
+              </div>
+              <p className="text-gray-300 text-sm">
+                <span className="font-semibold text-success">Currently analyzing:</span> {currentRepo}
               </p>
             </div>
           )}
 
           {/* Examples Row */}
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-gray-500 text-xs font-medium uppercase tracking-wider">Popular:</span>
+            <span className="text-gray-600 text-xs font-medium uppercase tracking-wider">Popular:</span>
             {examples.map((example) => (
               <button
                 key={example}
@@ -108,7 +118,7 @@ export const GitHubAnalyzer = ({ onAnalyze, isLoading, currentRepo }: GitHubAnal
                   onAnalyze(example);
                 }}
                 disabled={isLoading}
-                className="text-xs px-3 py-1.5 bg-cyber-gray-light bg-opacity-50 border border-cyber-gray rounded-lg hover:border-electric-blue hover:text-electric-blue hover:bg-electric-blue hover:bg-opacity-10 transition-all disabled:opacity-50 text-gray-300"
+                className="text-xs px-3 py-1.5 glass rounded-lg hover:border-accent/20 hover:text-accent transition-all disabled:opacity-40 text-gray-400"
               >
                 {example}
               </button>
@@ -116,9 +126,9 @@ export const GitHubAnalyzer = ({ onAnalyze, isLoading, currentRepo }: GitHubAnal
           </div>
 
           {/* Info Tip */}
-          <div className="p-3 bg-blue-900 bg-opacity-10 border border-blue-700 border-opacity-15 rounded-xl">
-            <p className="text-gray-400 text-xs leading-relaxed">
-              <span className="text-electric-blue font-semibold">Tip:</span>{' '}
+          <div className="glass p-3 rounded-xl" style={{ borderColor: 'rgba(0,212,255,0.08)' }}>
+            <p className="text-gray-500 text-xs leading-relaxed">
+              <span className="text-accent font-semibold">Tip:</span>{' '}
               Enter any public GitHub repository. The system will analyze commits, issues, and pull requests using NLP to calculate accurate reliability metrics and risk scores — all in your browser, no backend needed.
             </p>
           </div>
