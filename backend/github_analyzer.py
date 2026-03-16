@@ -117,7 +117,6 @@ class GitHubAnalyzer:
         commits_30d = self._count_recent_commits(repo, days=30)
         contributors_30d = self._count_recent_contributors(repo, days=30)
         open_issues = repo.open_issues_count
-
         prediction = self.risk_model.predict_risk_details(
             commits_30d=commits_30d,
             contributors_30d=contributors_30d,
