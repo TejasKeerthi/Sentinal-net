@@ -1,0 +1,171 @@
+{
+  "name": "Sentinel CI/CD Webhook Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sentinel-cicd",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook_Trigger",
+      "name": "GitHub Deploy Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "sentinel-cicd-webhook"
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            {
+              "name": "event",
+              "value": "={{ $json.body.event || 'unknown' }}"
+            },
+            {
+              "name": "status",
+              "value": "={{ $json.body.status || 'unknown' }}"
+            },
+            {
+              "name": "repository",
+              "value": "={{ $json.body.repository || '' }}"
+            },
+            {
+              "name": "branch",
+              "value": "={{ $json.body.branch || '' }}"
+            },
+            {
+              "name": "actor",
+              "value": "={{ $json.body.actor || '' }}"
+            },
+            {
+              "name": "pageUrl",
+              "value": "={{ $json.body.pageUrl || '' }}"
+            },
+            {
+              "name": "runUrl",
+              "value": "={{ $json.body.runUrl || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "Normalize_Payload",
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equal",
+              "value2": "success"
+            }
+          ]
+        }
+      },
+      "id": "If_Success",
+      "name": "Deployment Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": true,\n  \"message\": \"Deployment success event received\",\n  \"repository\": \"{{ $json.repository }}\",\n  \"pageUrl\": \"{{ $json.pageUrl }}\"\n}",
+        "options": {}
+      },
+      "id": "Respond_Success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": true,\n  \"message\": \"Deployment failure event received\",\n  \"repository\": \"{{ $json.repository }}\",\n  \"runUrl\": \"{{ $json.runUrl }}\"\n}",
+        "options": {}
+      },
+      "id": "Respond_Failure",
+      "name": "Respond Failure",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        380
+      ]
+    }
+  ],
+  "connections": {
+    "GitHub Deploy Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payload": {
+      "main": [
+        [
+          {
+            "node": "Deployment Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deployment Success?": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "sentinel-cicd-automation",
+  "tags": []
+}
