@@ -50,6 +50,30 @@
             {
               "name": "runUrl",
               "value": "={{ $json.body.runUrl || '' }}"
+            },
+            {
+              "name": "buildStatus",
+              "value": "={{ $json.body.buildStatus || '' }}"
+            },
+            {
+              "name": "deployStatus",
+              "value": "={{ $json.body.deployStatus || '' }}"
+            },
+            {
+              "name": "slackWebhookUrl",
+              "value": "={{ $env.SLACK_WEBHOOK_URL || '' }}"
+            },
+            {
+              "name": "discordWebhookUrl",
+              "value": "={{ $env.DISCORD_WEBHOOK_URL || '' }}"
+            },
+            {
+              "name": "alertEmailTo",
+              "value": "={{ $env.ALERT_EMAIL_TO || '' }}"
+            },
+            {
+              "name": "alertEmailFrom",
+              "value": "={{ $env.ALERT_EMAIL_FROM || '' }}"
             }
           ]
         },
@@ -87,6 +111,206 @@
     },
     {
       "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            {
+              "name": "notificationTitle",
+              "value": "=SUCCESS: Deploy completed for {{ $json.repository }}"
+            },
+            {
+              "name": "notificationText",
+              "value": "=Branch: {{ $json.branch }} | Actor: {{ $json.actor }} | Page: {{ $json.pageUrl }} | Run: {{ $json.runUrl }}"
+            },
+            {
+              "name": "emailSubject",
+              "value": "=SUCCESS: Sentinel deploy completed ({{ $json.repository }})"
+            },
+            {
+              "name": "emailBody",
+              "value": "=Deployment succeeded.\n\nRepository: {{ $json.repository }}\nBranch: {{ $json.branch }}\nActor: {{ $json.actor }}\nBuild Status: {{ $json.buildStatus }}\nDeploy Status: {{ $json.deployStatus }}\nPage URL: {{ $json.pageUrl }}\nRun URL: {{ $json.runUrl }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "Build_Success_Context",
+      "name": "Build Success Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        980,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            {
+              "name": "notificationTitle",
+              "value": "=FAILURE: Deploy failed for {{ $json.repository }}"
+            },
+            {
+              "name": "notificationText",
+              "value": "=Branch: {{ $json.branch }} | Actor: {{ $json.actor }} | Build: {{ $json.buildStatus }} | Deploy: {{ $json.deployStatus }} | Run: {{ $json.runUrl }}"
+            },
+            {
+              "name": "emailSubject",
+              "value": "=FAILURE: Sentinel deploy failed ({{ $json.repository }})"
+            },
+            {
+              "name": "emailBody",
+              "value": "=Deployment failed.\n\nRepository: {{ $json.repository }}\nBranch: {{ $json.branch }}\nActor: {{ $json.actor }}\nBuild Status: {{ $json.buildStatus }}\nDeploy Status: {{ $json.deployStatus }}\nRun URL: {{ $json.runUrl }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "Build_Failure_Context",
+      "name": "Build Failure Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        980,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.slackWebhookUrl }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "If_Slack_Configured",
+      "name": "Slack Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.slackWebhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"text\": $json.notificationTitle + \"\\n\" + $json.notificationText } }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false
+            }
+          }
+        }
+      },
+      "id": "Send_Slack_Alert",
+      "name": "Send Slack Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1460,
+        120
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.discordWebhookUrl }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "If_Discord_Configured",
+      "name": "Discord Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.discordWebhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"content\": $json.notificationTitle + \"\\n\" + $json.notificationText } }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false
+            }
+          }
+        }
+      },
+      "id": "Send_Discord_Alert",
+      "name": "Send Discord Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1460,
+        300
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.alertEmailTo }}",
+              "operation": "isNotEmpty"
+            },
+            {
+              "value1": "={{ $json.alertEmailFrom }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "If_Email_Configured",
+      "name": "Email Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.alertEmailFrom }}",
+        "toEmail": "={{ $json.alertEmailTo }}",
+        "subject": "={{ $json.emailSubject }}",
+        "text": "={{ $json.emailBody }}",
+        "options": {}
+      },
+      "id": "Send_Email_Alert",
+      "name": "Send Email Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1460,
+        480
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
         "respondWith": "json",
         "responseBody": "={\n  \"ok\": true,\n  \"message\": \"Deployment success event received\",\n  \"repository\": \"{{ $json.repository }}\",\n  \"pageUrl\": \"{{ $json.pageUrl }}\"\n}",
         "options": {}
@@ -96,7 +320,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1040,
+        1220,
         220
       ]
     },
@@ -111,8 +335,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1040,
-        380
+        1220,
+        400
       ]
     }
   ],
@@ -143,18 +367,106 @@
       "main": [
         [
           {
-            "node": "Respond Success",
+            "node": "Build Success Context",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Respond Failure",
+            "node": "Build Failure Context",
             "type": "main",
             "index": 0
           }
         ]
+      ]
+    },
+    "Build Success Context": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Configured?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Discord Configured?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Failure Context": {
+      "main": [
+        [
+          {
+            "node": "Respond Failure",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Configured?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Discord Configured?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack Configured?": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Discord Configured?": {
+      "main": [
+        [
+          {
+            "node": "Send Discord Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Email Configured?": {
+      "main": [
+        [
+          {
+            "node": "Send Email Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     }
   },
