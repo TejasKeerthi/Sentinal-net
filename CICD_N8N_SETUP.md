@@ -49,9 +49,25 @@ The deploy workflow sends payload fields:
 - runUrl
 
 ## 4) Optional Next Automation Steps in n8n
-After the Deployment Success? node, you can add:
-- Slack node for notifications
-- Email node for alerts
+The imported workflow now includes ready alert branches for:
+- Slack (incoming webhook)
+- Discord (incoming webhook)
+- Email (SMTP via n8n Email node)
+
+Configure these n8n environment variables where n8n runs:
+- SLACK_WEBHOOK_URL
+- DISCORD_WEBHOOK_URL
+- ALERT_EMAIL_TO
+- ALERT_EMAIL_FROM
+
+If a variable is missing, that channel is skipped automatically.
+
+For Email alerts:
+- Open Send Email Alert node in n8n.
+- Attach your SMTP credential.
+- Keep ALERT_EMAIL_TO and ALERT_EMAIL_FROM set.
+
+Additional optional nodes you can still add:
 - Jira node for incident ticket creation on failures
 - HTTP Request node to trigger downstream systems
 
