@@ -6,8 +6,9 @@ Now with NLP-powered semantic analysis!
 
 import os
 from datetime import datetime, timedelta
-from typing import List, Dict, Tuple
-import re
+from typing import List, Dict
+
+from ml_risk_model import get_risk_model
 
 try:
     from github import Github, GithubException
@@ -35,6 +36,7 @@ class GitHubAnalyzer:
             self.client = Github(self.token) if self.token else Github()
         else:
             self.client = None
+        self.risk_model = get_risk_model()
     
     def analyze_repo(self, repo_url: str) -> Dict:
         """
@@ -115,16 +117,23 @@ class GitHubAnalyzer:
         commits_30d = self._count_recent_commits(repo, days=30)
         contributors_30d = self._count_recent_contributors(repo, days=30)
         open_issues = repo.open_issues_count
-        
-        # NLP-enhanced risk calculation
-        risk_score = self._calculate_risk_score_nlp(
-            repo,
-            commits_30d, 
-            contributors_30d, 
-            open_issues
+
+        prediction = self.risk_model.predict_risk_details(
+            commits_30d=commits_30d,
+            contributors_30d=contributors_30d,
+            open_issues=open_issues,
         )
-        # Ensure integer 0-100
-        risk_score = max(0, min(100, int(round(risk_score))))
+
+        nlp_score = self._calculate_risk_score_nlp(
+            repo,
+            commits_30d,
+            contributors_30d,
+            open_issues,
+        )
+
+        # Blend project-specific ensemble output with NLP risk signals.
+        risk_score = int(round((0.75 * prediction["risk_score"]) + (0.25 * nlp_score)))
+        risk_score = max(0, min(100, risk_score))
         
         # Health status
         if risk_score > 85:
@@ -142,6 +151,9 @@ class GitHubAnalyzer:
                 "commits_30d": commits_30d,
                 "contributors_30d": contributors_30d,
                 "open_issues": open_issues,
+                "prediction": prediction,
+                "nlp_risk_score": nlp_score,
+                "risk_model": self.risk_model.get_status(),
             }
         }
     
@@ -250,29 +262,18 @@ class GitHubAnalyzer:
             score -= 10  # Healthy active project
         
         # Always clamp to 0-100 integer
+        return max(0, min(100, int(round(score))))
 
     def _calculate_risk_score(self, commits: int, contributors: int, issues: int) -> int:
         """
-        Calculate failure risk score (0-100)
-        Lower is better (less risk)
+        Calculate failure risk score (0-100) from trained model.
+        Lower is better (less risk).
         """
-        score = 50  # Base score
-        
-        # High issue count increases risk
-        score += min(issues // 5, 20)
-        
-        # Low commit activity increases risk (stale repo)
-        if commits == 0:
-            score += 25
-        elif commits < 5:
-            score += 15
-        
-        # Many contributors can increase risk (more changes/conflicts)
-        if contributors > 20:
-            score += 10
-        
-        # Clamp to 0-100
-        return max(0, min(100, score))
+        return self.risk_model.predict_risk_score(
+            commits_30d=commits,
+            contributors_30d=contributors,
+            open_issues=issues,
+        )
     
     def _extract_signals(self, repo) -> List[Dict]:
         """Extract recent signals (commits, issues, PRs) with NLP analysis and conflict detection"""
@@ -768,6 +769,17 @@ class GitHubAnalyzer:
         
         if contributors > 15:
             factors.append(f"High contributor count ({contributors}) may indicate coordination challenges")
+
+        model_status = self.risk_model.get_status()
+        prediction = metrics["metadata"].get("prediction", {})
+        if model_status.get("trained"):
+            factors.append(
+                "ML risk model active: "
+                f"{model_status.get('model')} trained on {model_status.get('augmented_samples', model_status.get('raw_samples'))} samples "
+                f"(CV MAE: {model_status.get('mae_cv')}, confidence: {prediction.get('confidence', 'n/a')})"
+            )
+        else:
+            factors.append("ML risk model unavailable; fallback heuristic scoring is active")
         
         # Build NLP-informed description
         sentiment_positive = sum(1 for s in signals if s.get("nlp", {}).get("sentiment") == "positive")
