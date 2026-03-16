@@ -233,7 +233,77 @@ async def get_system_data():
         aiInsights=get_mock_ai_insight()
     )
 
-@app.get(\"/api/analyze-github\")\nasync def analyze_github(repo: str = Query(..., description=\"GitHub repo (e.g., 'owner/repo' or full URL)\")):\n    \"\"\"\n    Analyze a real GitHub repository with NLP-powered semantic analysis\n    \n    Args:\n        repo: GitHub repository (e.g., \"torvalds/linux\" or \"https://github.com/torvalds/linux\")\n    \n    Returns:\n        SystemData: Real analysis with NLP-enhanced signals and insights\n    \n    Examples:\n        /api/analyze-github?repo=torvalds/linux\n        /api/analyze-github?repo=https://github.com/facebook/react\n    \"\"\"\n    analyzer = get_analyzer()\n    result = analyzer.analyze_repo(repo)\n    \n    # If it's a fallback/error\n    if result.get(\"fallback\"):\n        return {\n            \"error\": result.get(\"error\"),\n            \"message\": result.get(\"message\"),\n            \"suggestion\": \"Try: /api/analyze-github?repo=torvalds/linux\",\n            \"steps\": [\n                \"1. Install PyGithub: pip install PyGithub\",\n                \"2. (Optional) Get GitHub token: https://github.com/settings/tokens\",\n                \"3. Set GITHUB_TOKEN env variable\",\n                \"4. Try again\"\n            ]\n        }\n    \n    # Convert to SystemData format with NLP metadata\n    try:\n        signals = []\n        for s in result.get(\"signals\", []):\n            if \"nlp\" in s:\n                signal = SignalItem(\n                    id=s[\"id\"],\n                    timestamp=s[\"timestamp\"],\n                    message=s[\"message\"],\n                    status=s[\"status\"],\n                    source=s[\"source\"],\n                    nlp=NLPMetadata(**s[\"nlp\"]) if s.get(\"nlp\") else None\n                )\n            else:\n                signal = SignalItem(\n                    id=s[\"id\"],\n                    timestamp=s[\"timestamp\"],\n                    message=s[\"message\"],\n                    status=s[\"status\"],\n                    source=s[\"source\"]\n                )\n            signals.append(signal)\n        \n        # Ensure risk score is an integer 0-100\n        metrics_data = result[\"metrics\"]\n        if \"failureRiskScore\" in metrics_data:\n            metrics_data[\"failureRiskScore\"] = max(0, min(100, int(round(metrics_data[\"failureRiskScore\"]))))\n        \n        ai_insights_data = result.get(\"aiInsights\", {})\n        ai_insights = AIInsight(\n            title=ai_insights_data.get(\"title\", \"Analysis Complete\"),\n            description=ai_insights_data.get(\"description\", \"\"),\n            factors=ai_insights_data.get(\"factors\", []),\n            recommendation=ai_insights_data.get(\"recommendation\", \"\"),\n            nlp_insights=ai_insights_data.get(\"nlp_insights\")\n        )\n        \n        return SystemData(\n            metrics=SystemMetrics(**metrics_data),\n            signals=signals,\n            temporalData=[TemporalDataPoint(**t) for t in result.get(\"temporalData\", [])],\n            aiInsights=ai_insights\n        )\n    except Exception as e:\n        return {\n            \"error\": str(e),\n            \"data\": result\n        }
+@app.get("/api/analyze-github")
+async def analyze_github(repo: str = Query(..., description="GitHub repo (e.g., 'owner/repo' or full URL)")):
+    """
+    Analyze a real GitHub repository with NLP-powered semantic analysis
+
+    Args:
+        repo: GitHub repository (e.g., "torvalds/linux" or "https://github.com/torvalds/linux")
+
+    Returns:
+        SystemData: Real analysis with NLP-enhanced signals and insights
+
+    Examples:
+        /api/analyze-github?repo=torvalds/linux
+        /api/analyze-github?repo=https://github.com/facebook/react
+    """
+    analyzer = get_analyzer()
+    result = analyzer.analyze_repo(repo)
+
+    # If it's a fallback/error
+    if result.get("fallback"):
+        return {
+            "error": result.get("error"),
+            "message": result.get("message"),
+            "suggestion": "Try: /api/analyze-github?repo=torvalds/linux",
+            "steps": [
+                "1. Install PyGithub: pip install PyGithub",
+                "2. (Optional) Get GitHub token: https://github.com/settings/tokens",
+                "3. Set GITHUB_TOKEN env variable",
+                "4. Try again",
+            ],
+        }
+
+    # Convert to SystemData format with NLP metadata
+    try:
+        signals = []
+        for signal_data in result.get("signals", []):
+            signal = SignalItem(
+                id=signal_data["id"],
+                timestamp=signal_data["timestamp"],
+                message=signal_data["message"],
+                status=signal_data["status"],
+                source=signal_data["source"],
+                nlp=NLPMetadata(**signal_data["nlp"]) if signal_data.get("nlp") else None,
+            )
+            signals.append(signal)
+
+        # Ensure risk score is an integer 0-100
+        metrics_data = result["metrics"]
+        if "failureRiskScore" in metrics_data:
+            metrics_data["failureRiskScore"] = max(0, min(100, int(round(metrics_data["failureRiskScore"]))))
+
+        ai_insights_data = result.get("aiInsights", {})
+        ai_insights = AIInsight(
+            title=ai_insights_data.get("title", "Analysis Complete"),
+            description=ai_insights_data.get("description", ""),
+            factors=ai_insights_data.get("factors", []),
+            recommendation=ai_insights_data.get("recommendation", ""),
+            nlp_insights=ai_insights_data.get("nlp_insights"),
+        )
+
+        return SystemData(
+            metrics=SystemMetrics(**metrics_data),
+            signals=signals,
+            temporalData=[TemporalDataPoint(**t) for t in result.get("temporalData", [])],
+            aiInsights=ai_insights,
+        )
+    except Exception as e:
+        return {
+            "error": str(e),
+            "data": result,
+        }
 
 @app.get("/api/metrics", response_model=SystemMetrics)
 async def get_metrics():
@@ -273,7 +343,9 @@ async def analyze():
 # API Endpoints - GitHub Analysis
 # ============================================================================
 
-# ============================================================================\n# API Endpoints - NLP Analysis\n# ============================================================================
+# ============================================================================
+# API Endpoints - NLP Analysis
+# ============================================================================
 
 @app.post("/api/nlp/analyze", response_model=NLPAnalysisResponse)
 async def nlp_analyze(text: str = Query(..., description="Text to analyze (commit message, issue, etc.)")):

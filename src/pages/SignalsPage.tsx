@@ -1,6 +1,6 @@
 import { AlertTriangle, Clock, Zap } from 'lucide-react';
 import { RefreshButton } from '../components/RefreshButton';
-import type { SystemData } from '../types';
+import type { SignalItem, SystemData } from '../types';
 
 interface SignalsPageProps {
   data: SystemData;
@@ -53,7 +53,7 @@ const SummaryCard = ({ title, count, icon, color, delay }: {
 );
 
 const SignalCategory = ({ title, signals, color }: {
-  title: string; signals: any[]; color: string;
+  title: string; signals: SignalItem[]; color: string;
 }) => (
   <div className="glass-card p-6 anim-fade-up">
     <h2 className="text-lg font-bold mb-4" style={{ color }}>{title}</h2>

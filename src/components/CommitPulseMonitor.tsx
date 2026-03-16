@@ -15,7 +15,9 @@ interface Props {
 export const CommitPulseMonitor = ({ timestamps, risk }: Props) => {
   // Build pulse data: group commits by "hour buckets" (last 24h)
   const pulseData = useMemo(() => {
-    const now = Date.now();
+    const now = timestamps.length
+      ? Math.max(...timestamps.map((t) => new Date(t).getTime()))
+      : 0;
     const buckets = Array.from({ length: 24 }, () => 0);
     timestamps.forEach(t => {
       const hoursAgo = Math.floor((now - new Date(t).getTime()) / 3_600_000);

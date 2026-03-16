@@ -3,9 +3,9 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 interface WebSocketMessage {
   type: string;
   timestamp: string;
-  data?: any;
+  data?: unknown;
   message?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface UseWebSocketOptions {
@@ -33,6 +33,7 @@ export const useWebSocket = (
   const reconnectCountRef = useRef(0);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messageCallbacksRef = useRef<Map<string, (msg: WebSocketMessage) => void>>(new Map());
+  const connectRef = useRef<() => void>(() => undefined);
 
   const connect = useCallback(() => {
     try {
@@ -76,7 +77,7 @@ export const useWebSocket = (
           reconnectCountRef.current += 1;
           reconnectTimeoutRef.current = setTimeout(() => {
             console.log(`Reconnecting... (attempt ${reconnectCountRef.current})`);
-            connect();
+            connectRef.current();
           }, reconnectDelay);
         }
       };
@@ -88,7 +89,11 @@ export const useWebSocket = (
     }
   }, [url, autoReconnect, reconnectAttempts, reconnectDelay]);
 
-  const send = useCallback((data: any) => {
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
+
+  const send = useCallback((data: Record<string, unknown>) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(data));
     } else {
@@ -122,12 +127,15 @@ export const useWebSocket = (
 
   // Auto-connect on mount
   useEffect(() => {
-    connect();
+    const initialConnectTimer = setTimeout(() => {
+      connectRef.current();
+    }, 0);
 
     return () => {
+      clearTimeout(initialConnectTimer);
       disconnect();
     };
-  }, [connect, disconnect]);
+  }, [disconnect]);
 
   // Periodic ping to keep connection alive
   useEffect(() => {
