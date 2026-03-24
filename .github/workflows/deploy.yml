@@ -56,15 +56,16 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-  notify-n8n:
-    name: Notify n8n
+  notify-channels:
+    name: Notify Channels
     runs-on: ubuntu-latest
     needs: [build, deploy]
     if: ${{ always() }}
     steps:
-      - name: Send workflow result to n8n webhook
+      - name: Send workflow result to Discord/Slack webhooks
         env:
-          N8N_WEBHOOK_URL: ${{ secrets.N8N_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           BUILD_STATUS: ${{ needs.build.result }}
           DEPLOY_STATUS: ${{ needs.deploy.result }}
           PAGE_URL: ${{ needs.deploy.outputs.page_url }}
@@ -77,11 +78,6 @@ jobs:
           RUN_ATTEMPT: ${{ github.run_attempt }}
           SERVER_URL: ${{ github.server_url }}
         run: |
-          if [ -z "$N8N_WEBHOOK_URL" ]; then
-            echo "N8N_WEBHOOK_URL secret not set. Skipping n8n notification."
-            exit 0
-          fi
-
           RUN_URL="$SERVER_URL/$REPO/actions/runs/$RUN_ID"
 
           STATUS="success"
@@ -89,25 +85,32 @@ jobs:
             STATUS="failure"
           fi
 
-          payload=$(cat <<EOF
+          MESSAGE="Deploy $STATUS for $REPO on $BRANCH by $ACTOR | build=$BUILD_STATUS deploy=$DEPLOY_STATUS | page=$PAGE_URL | run=$RUN_URL"
+
+          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+            discord_payload=$(cat <<EOF
           {
-            "event": "github-pages-deploy",
-            "status": "$STATUS",
-            "buildStatus": "$BUILD_STATUS",
-            "deployStatus": "$DEPLOY_STATUS",
-            "repository": "$REPO",
-            "branch": "$BRANCH",
-            "commitSha": "$SHA",
-            "actor": "$ACTOR",
-            "pageUrl": "$PAGE_URL",
-            "runId": "$RUN_ID",
-            "runNumber": "$RUN_NUMBER",
-            "runAttempt": "$RUN_ATTEMPT",
-            "runUrl": "$RUN_URL"
+            "content": "$MESSAGE"
           }
           EOF
           )
+            curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d "$discord_payload"
+          else
+            echo "DISCORD_WEBHOOK_URL not set. Skipping Discord notification."
+          fi
 
-          curl -sS -X POST "$N8N_WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -d "$payload"
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            slack_payload=$(cat <<EOF
+          {
+            "text": "$MESSAGE"
+          }
+          EOF
+          )
+            curl -sS -X POST "$SLACK_WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d "$slack_payload"
+          else
+            echo "SLACK_WEBHOOK_URL not set. Skipping Slack notification."
+          fi
