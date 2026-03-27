@@ -1,0 +1,120 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-vercel:
+    name: Deploy Frontend to Vercel
+    runs-on: ubuntu-latest
+    if: ${{ secrets.VERCEL_TOKEN != '' && secrets.VERCEL_ORG_ID != '' && secrets.VERCEL_PROJECT_ID != '' }}
+    outputs:
+      deployment_url: ${{ steps.vercel_deploy.outputs.deployment_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=production --token="${VERCEL_TOKEN}"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Build project artifacts
+        run: vercel build --prod --token="${VERCEL_TOKEN}"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Deploy prebuilt artifacts
+        id: vercel_deploy
+        shell: bash
+        run: |
+          DEPLOY_URL=$(vercel deploy --prebuilt --prod --token="${VERCEL_TOKEN}")
+          echo "deployment_url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+          echo "Vercel deployment URL: ${DEPLOY_URL}"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+  skip-vercel:
+    name: Skip Vercel Deploy (Secrets Missing)
+    runs-on: ubuntu-latest
+    if: ${{ !(secrets.VERCEL_TOKEN != '' && secrets.VERCEL_ORG_ID != '' && secrets.VERCEL_PROJECT_ID != '') }}
+    steps:
+      - name: Explain skip
+        run: |
+          echo "Skipping Vercel deployment. Configure repository secrets:"
+          echo "- VERCEL_TOKEN"
+          echo "- VERCEL_ORG_ID"
+          echo "- VERCEL_PROJECT_ID"
+
+  notify-vercel:
+    name: Notify Vercel Result
+    runs-on: ubuntu-latest
+    needs: [deploy-vercel, skip-vercel]
+    if: ${{ always() }}
+    steps:
+      - name: Build notification payload
+        id: payload
+        shell: bash
+        run: |
+          DEPLOY_RESULT="${{ needs.deploy-vercel.result }}"
+          SKIP_RESULT="${{ needs.skip-vercel.result }}"
+          BRANCH="${{ github.ref_name }}"
+          ACTOR="${{ github.actor }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          DEPLOY_URL="${{ needs.deploy-vercel.outputs.deployment_url }}"
+
+          if [ "$DEPLOY_RESULT" = "success" ]; then
+            STATUS="success"
+          elif [ "$SKIP_RESULT" = "success" ]; then
+            STATUS="skipped"
+          else
+            STATUS="failure"
+          fi
+
+          echo "text=Vercel deploy ${STATUS}" >> "$GITHUB_OUTPUT"
+          echo "details=Branch: ${BRANCH} | Actor: ${ACTOR} | URL: ${DEPLOY_URL:-N/A} | Run: ${RUN_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Discord
+        if: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TEXT: ${{ steps.payload.outputs.text }}
+          DETAILS: ${{ steps.payload.outputs.details }}
+        run: |
+          curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{\"content\":\"${TEXT}\\n${DETAILS}\"}" >/dev/null
+
+      - name: Notify Slack
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TEXT: ${{ steps.payload.outputs.text }}
+          DETAILS: ${{ steps.payload.outputs.details }}
+        run: |
+          curl -sS -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\":\"${TEXT}\\n${DETAILS}\"}" >/dev/null

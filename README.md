@@ -140,6 +140,18 @@ npm run build
 npm run preview
 ```
 
+## ☁️ Vercel Deployment
+
+Vercel deployment is automated through GitHub Actions via `.github/workflows/deploy-vercel.yml`.
+
+Add these repository secrets to enable production deploys on every push to `main`:
+
+- `VERCEL_TOKEN`
+- `VERCEL_ORG_ID`
+- `VERCEL_PROJECT_ID`
+
+If any secret is missing, the workflow exits as `skipped` (not failed), so CI remains stable.
+
 ## 📚 Documentation
 
 - [Development Guide](.github/copilot-instructions.md)
