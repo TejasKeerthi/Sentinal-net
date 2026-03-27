@@ -49,10 +49,32 @@ function App() {
         <main className="flex-1 ml-64 p-8 overflow-auto">
           <div className="max-w-7xl mx-auto">
             {error && (
-              <div className="mb-6 glass-card p-4 flex items-center gap-3 anim-fade-up"
-                style={{ borderColor: 'rgba(0,212,255,0.15)' }}>
-                <div className="w-2 h-2 rounded-full bg-accent anim-heartbeat" />
-                <span className="text-gray-400 text-sm">{error}</span>
+              <div className="mb-6 glass-card p-4 anim-fade-up"
+                style={{ borderColor: 'rgba(255,107,53,0.25)' }}>
+                <div className="flex items-start gap-3">
+                  <div className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: '#ff6b35' }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm" style={{ color: '#ff6b35' }}>{error}</p>
+                    {error.toLowerCase().includes('rate limit') && (
+                      <p className="text-gray-500 text-xs mt-1.5 leading-relaxed">
+                        Fix: add your token to{' '}
+                        <code className="text-accent bg-white/5 px-1 py-0.5 rounded">.env</code>{' '}
+                        →{' '}
+                        <code className="text-accent bg-white/5 px-1 py-0.5 rounded">VITE_GITHUB_TOKEN=ghp_…</code>
+                        , then restart the dev server.{' '}
+                        <a
+                          href="https://github.com/settings/tokens/new?description=sentinel-net&scopes=public_repo"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline hover:opacity-80 transition-opacity"
+                          style={{ color: '#00d4ff' }}
+                        >
+                          Generate token →
+                        </a>
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
             {renderPage()}

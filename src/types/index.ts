@@ -6,6 +6,16 @@ export interface SystemMetrics {
     commits_30d: number;
     contributors_30d: number;
     open_issues: number;
+    closed_issues_30d?: number;
+    open_prs?: number;
+    model_name?: string;
+    model_version?: string;
+    ml_prediction?: number;
+    nlp_signal_score?: number;
+    blended_score?: number;
+    confidence?: number;
+    uncertainty?: number;
+    contributing_factors?: Record<string, number>;
   };
 }
 
@@ -103,6 +113,18 @@ export interface SystemData {
   temporalData: TemporalDataPoint[];
   aiInsights: AIInsight;
   mergeConflicts?: MergeConflictData;
+  repoInfo?: RepoInfo;
+  riskBreakdown?: {
+    risk_score: number;
+    confidence: number;
+    uncertainty: number;
+    ml_risk_score: number;
+    nlp_signal_score: number;
+    blended_risk_score: number;
+    reasoning_factors: Record<string, number>;
+  };
+  fallback?: boolean;
+  warning?: string;
 }
 
 export interface RepoInfo {

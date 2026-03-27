@@ -1,0 +1,14 @@
+{
+  "trained": true,
+  "model_name": "StackingRegressor(RandomForest, GradientBoosting, ExtraTrees -> Ridge)",
+  "model_version": "1.0.0",
+  "sample_count": 1400,
+  "feature_count": 18,
+  "trained_at": "2026-03-27T15:04:23.266965Z",
+  "metrics": {
+    "rmse": 3.9891,
+    "mae": 3.1261,
+    "r2": 0.922
+  },
+  "dataset_path": "C:\\Users\\Tejas\\Desktop\\KLH\\sentinal-net-NLP\\backend\\data\\repository_risk_training.csv"
+}

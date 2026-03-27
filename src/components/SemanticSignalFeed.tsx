@@ -1,6 +1,5 @@
 import { AlertTriangle, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 import type { SignalItem } from '../types';
-import clsx from 'clsx';
 
 interface SemanticSignalFeedProps {
   signals: SignalItem[];

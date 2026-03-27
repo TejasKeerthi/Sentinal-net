@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { SystemData } from '../types';
 import { mockSystemData } from '../data/mockData';
-import { analyzeRepository } from '../services/githubAnalyzer';
+import { analyzeRepository, getSystemData } from '../services/githubAnalyzer';
 
 export const useSystemData = () => {
   const [data, setData] = useState<SystemData>(mockSystemData);
@@ -9,9 +9,21 @@ export const useSystemData = () => {
   const [currentRepo, setCurrentRepo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const backendData = await getSystemData();
+        setData(backendData);
+      } catch {
+        // Keep local mock if backend is unavailable.
+      }
+    };
+
+    void load();
+  }, []);
+
   /**
-   * Analyze a GitHub repo directly from the browser using the public GitHub API.
-   * No backend server required — NLP runs in-browser.
+   * Analyze a GitHub repo through backend ML/NLP pipeline.
    */
   const analyzeGitHubRepo = useCallback(async (repoUrl: string) => {
     if (!repoUrl.trim()) {

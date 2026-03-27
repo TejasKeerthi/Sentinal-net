@@ -33,7 +33,7 @@ export const useWebSocket = (
   const reconnectCountRef = useRef(0);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messageCallbacksRef = useRef<Map<string, (msg: WebSocketMessage) => void>>(new Map());
-  const connectRef = useRef<() => void>(() => undefined);
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
     try {
@@ -89,11 +89,7 @@ export const useWebSocket = (
     }
   }, [url, autoReconnect, reconnectAttempts, reconnectDelay]);
 
-  useEffect(() => {
-    connectRef.current = connect;
-  }, [connect]);
-
-  const send = useCallback((data: Record<string, unknown>) => {
+  const send = useCallback((data: unknown) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(data));
     } else {
@@ -127,15 +123,20 @@ export const useWebSocket = (
 
   // Auto-connect on mount
   useEffect(() => {
-    const initialConnectTimer = setTimeout(() => {
-      connectRef.current();
+    connectRef.current = connect;
+  }, [connect]);
+
+  // Auto-connect on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      connect();
     }, 0);
 
     return () => {
-      clearTimeout(initialConnectTimer);
+      clearTimeout(timer);
       disconnect();
     };
-  }, [disconnect]);
+  }, [connect, disconnect]);
 
   // Periodic ping to keep connection alive
   useEffect(() => {

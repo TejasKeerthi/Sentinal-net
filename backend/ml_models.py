@@ -1,343 +1,442 @@
 """
-Advanced Machine Learning Models for Software Reliability Prediction
-Includes Random Forest, Ensemble Methods, and Anomaly Detection
+Machine learning models for Sentinel-Net repository reliability scoring.
+Includes training dataset generation, stacking ensemble training, and
+confidence/uncertainty-aware inference.
 """
 
-import numpy as np
-from datetime import datetime, timedelta
-from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass
-import pickle
-import os
+from __future__ import annotations
 
-try:
-    from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, IsolationForest
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
-    SKLEARN_AVAILABLE = True
-except ImportError:
-    SKLEARN_AVAILABLE = False
+from dataclasses import dataclass, asdict
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
+
+import json
+import math
+import pickle
+
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import ExtraTreesRegressor, GradientBoostingRegressor, RandomForestRegressor
+from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import StackingRegressor
+
+
+CURRENT_DIR = Path(__file__).resolve().parent
+ARTIFACT_DIR = CURRENT_DIR / "models"
+DATA_DIR = CURRENT_DIR / "data"
+MODEL_ARTIFACT = ARTIFACT_DIR / "risk_model.pkl"
+STATUS_ARTIFACT = ARTIFACT_DIR / "training_status.json"
+DATASET_ARTIFACT = DATA_DIR / "repository_risk_training.csv"
+MODEL_VERSION = "1.0.0"
 
 
 @dataclass
-class MLPrediction:
-    """ML prediction result"""
+class TrainingStatus:
+    trained: bool
+    model_name: str
+    model_version: str
+    sample_count: int
+    feature_count: int
+    trained_at: str
+    metrics: Dict[str, float]
+    dataset_path: str
+
+
+@dataclass
+class RiskPrediction:
     predicted_risk_score: float
-    confidence_score: float
-    anomaly_detected: bool
-    anomaly_severity: float
-    contributing_features: Dict[str, float]
+    confidence: float
+    uncertainty: float
+    ml_risk_score: float
+    blended_risk_score: float
+    nlp_signal_score: float
+    contributing_factors: Dict[str, float]
+    model_name: str
+    model_version: str
     timestamp: str
-    forecast_next_24h: List[float]
 
 
 class RiskScorePredictorML:
-    """Machine Learning based Risk Score Predictor using Random Forest & Gradient Boosting"""
-    
-    def __init__(self):
-        """Initialize ML models"""
-        self.rf_model = None
-        self.gb_model = None
-        self.scaler = StandardScaler()
-        self.model_path = "models/risk_predictor.pkl"
-        self.load_or_train_model()
-        
-    def load_or_train_model(self):
-        """Load pre-trained model or train new one"""
-        if os.path.exists(self.model_path) and SKLEARN_AVAILABLE:
-            try:
-                with open(self.model_path, 'rb') as f:
-                    data = pickle.load(f)
-                    self.rf_model = data['rf_model']
-                    self.gb_model = data['gb_model']
-                    self.scaler = data['scaler']
-                return
-            except:
-                pass
-        
-        # Initialize models if not available
-        if SKLEARN_AVAILABLE:
-            self.rf_model = RandomForestRegressor(
-                n_estimators=100,
-                max_depth=15,
-                min_samples_split=5,
-                random_state=42
-            )
-            self.gb_model = GradientBoostingRegressor(
-                n_estimators=100,
-                learning_rate=0.1,
-                max_depth=5,
-                random_state=42
-            )
-    
-    def extract_features(self, 
-                        commits_30d: int,
-                        contributors_30d: int,
-                        open_issues: int,
-                        closed_issues_30d: int,
-                        avg_commit_frequency: float,
-                        code_churn_rate: float,
-                        test_coverage: float,
-                        ci_failures_rate: float) -> np.ndarray:
-        """Extract features for ML prediction"""
-        features = np.array([
-            commits_30d,
-            contributors_30d,
-            open_issues,
-            closed_issues_30d,
-            avg_commit_frequency,
-            code_churn_rate,
-            test_coverage,
-            ci_failures_rate,
-            open_issues / max(closed_issues_30d, 1),  # Issue resolution ratio
-            commits_30d / max(contributors_30d, 1),   # Commits per contributor
-            max(0, 100 - test_coverage),              # Coverage gap
-            ci_failures_rate * 100                     # CI failure percentage
-        ]).reshape(1, -1)
-        
-        return features
-    
-    def predict_risk(self,
-                    commits_30d: int,
-                    contributors_30d: int,
-                    open_issues: int,
-                    closed_issues_30d: int = 5,
-                    avg_commit_frequency: float = 2.5,
-                    code_churn_rate: float = 0.3,
-                    test_coverage: float = 75.0,
-                    ci_failures_rate: float = 0.05) -> MLPrediction:
-        """
-        Predict risk score using ML ensemble
-        
-        Returns:
-            MLPrediction with risk score, confidence, and feature importance
-        """
-        features = self.extract_features(
-            commits_30d,
-            contributors_30d,
-            open_issues,
-            closed_issues_30d,
-            avg_commit_frequency,
-            code_churn_rate,
-            test_coverage,
-            ci_failures_rate
-        )
-        
-        if not SKLEARN_AVAILABLE or self.rf_model is None:
-            # Fallback to rule-based calculation
-            return self._fallback_prediction(features[0])
-        
-        try:
-            # Scale features
-            features_scaled = self.scaler.fit_transform(features)
-            
-            # Get predictions from both models
-            rf_pred = max(0, min(100, self.rf_model.predict(features)[0]))
-            gb_pred = max(0, min(100, self.gb_model.predict(features)[0]))
-            
-            # Ensemble prediction (weighted average)
-            risk_score = (rf_pred * 0.5 + gb_pred * 0.5)
-            
-            # Calculate confidence (inverse of prediction variance)
-            predictions = [
-                rf_pred, gb_pred,
-                self._rule_based_risk(features[0])
-            ]
-            confidence = 1 - (np.std(predictions) / 100)
-            
-            # Feature importance analysis
-            feature_importance = self._get_feature_importance(features[0])
-            
-            # Forecast next 24 hours (simplified)
-            forecast = self._forecast_24h(risk_score, avg_commit_frequency)
-            
-        except Exception as e:
-            print(f"ML prediction error: {e}, using fallback")
-            return self._fallback_prediction(features[0])
-        
-        return MLPrediction(
-            predicted_risk_score=risk_score,
-            confidence_score=max(0.0, min(1.0, confidence)),
-            anomaly_detected=False,
-            anomaly_severity=0.0,
-            contributing_features=feature_importance,
-            timestamp=datetime.utcnow().isoformat() + "Z",
-            forecast_next_24h=forecast
-        )
-    
-    def _rule_based_risk(self, features: np.ndarray) -> float:
-        """Fallback rule-based risk calculation"""
-        commits_30d = features[0]
-        contributors = features[1]
-        open_issues = features[2]
-        closed_issues = features[3]
-        
-        # Base risk from open issues
-        risk = (open_issues / max(open_issues + closed_issues, 1)) * 100
-        
-        # Adjust for commit activity
-        if commits_30d < 5:
-            risk += 15  # Low activity is risky
-        elif commits_30d > 50:
-            risk += 10  # High activity may indicate instability
-        
-        # Adjust for team size
-        if contributors < 2:
-            risk += 20  # Small team
-        elif contributors > 10:
-            risk -= 5   # Large team better for reliability
-        
-        return max(0, min(100, risk))
-    
-    def _get_feature_importance(self, features: np.ndarray) -> Dict[str, float]:
-        """Calculate relative feature importance"""
-        feature_names = [
-            "commits_30d", "contributors", "open_issues", "closed_issues",
-            "commit_frequency", "code_churn", "test_coverage", "ci_failures",
-            "issue_ratio", "commits_per_contrib", "coverage_gap", "ci_fail_pct"
+    """Stacking ensemble regressor for repository reliability risk."""
+
+    def __init__(self) -> None:
+        ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+        self.feature_columns: List[str] = [
+            "commits_30d",
+            "contributors_30d",
+            "open_issues",
+            "closed_issues_30d",
+            "open_prs",
+            "avg_commit_frequency",
+            "code_churn_rate",
+            "bug_fix_ratio",
+            "urgent_signal_ratio",
+            "negative_sentiment_ratio",
+            "test_coverage",
+            "ci_failures_rate",
+            "mean_pr_cycle_time_hours",
+            "release_stability_index",
+            "issue_to_commit_ratio",
+            "bus_factor_inverse",
+            "developer_load_index",
+            "commit_volatility",
         ]
-        
-        # Simple importance based on magnitude and variance
-        importance = {}
-        for i, name in enumerate(feature_names):
-            importance[name] = float(np.abs(features[i]) / (np.max(np.abs(features)) + 1))
-        
-        return importance
-    
-    def _forecast_24h(self, current_risk: float, trend: float) -> List[float]:
-        """Forecast risk score for next 24 hours"""
-        forecast = []
-        for hour in range(24):
-            # Apply trend with some randomness decay
-            noise = np.random.normal(0, 1) * (1 - hour/24)
-            predicted = max(0, min(100, current_risk + (trend * hour * 0.5) + noise))
-            forecast.append(float(predicted))
-        return forecast
-    
-    def _fallback_prediction(self, features: np.ndarray) -> MLPrediction:
-        """Fallback prediction when ML models unavailable"""
-        risk_score = self._rule_based_risk(features)
-        return MLPrediction(
-            predicted_risk_score=risk_score,
-            confidence_score=0.65,
-            anomaly_detected=False,
-            anomaly_severity=0.0,
-            contributing_features={},
+        self.pipeline: Pipeline | None = None
+        self.status = TrainingStatus(
+            trained=False,
+            model_name="StackingRegressor",
+            model_version=MODEL_VERSION,
+            sample_count=0,
+            feature_count=len(self.feature_columns),
+            trained_at="",
+            metrics={},
+            dataset_path=str(DATASET_ARTIFACT),
+        )
+
+        self._load_or_train()
+
+    def _load_or_train(self) -> None:
+        if MODEL_ARTIFACT.exists() and STATUS_ARTIFACT.exists():
+            try:
+                with MODEL_ARTIFACT.open("rb") as f:
+                    payload = pickle.load(f)
+                with STATUS_ARTIFACT.open("r", encoding="utf-8") as f:
+                    status_data = json.load(f)
+
+                self.pipeline = payload["pipeline"]
+                self.feature_columns = payload["feature_columns"]
+                self.status = TrainingStatus(**status_data)
+                return
+            except Exception:
+                # If artifact is corrupt or stale, retrain.
+                pass
+
+        self.train_model()
+
+    def _generate_training_dataset(self, sample_count: int = 1400, seed: int = 42) -> pd.DataFrame:
+        rng = np.random.default_rng(seed)
+
+        commits_30d = rng.integers(0, 320, sample_count)
+        contributors_30d = rng.integers(1, 55, sample_count)
+        open_issues = rng.integers(0, 700, sample_count)
+        closed_issues_30d = rng.integers(0, 400, sample_count)
+        open_prs = rng.integers(0, 180, sample_count)
+
+        avg_commit_frequency = commits_30d / 30.0 + rng.normal(0, 0.7, sample_count)
+        avg_commit_frequency = np.clip(avg_commit_frequency, 0, None)
+
+        code_churn_rate = np.clip(rng.beta(2.0, 5.0, sample_count), 0.01, 1.0)
+        bug_fix_ratio = np.clip(rng.beta(2.2, 3.2, sample_count), 0.0, 1.0)
+        urgent_signal_ratio = np.clip(rng.beta(1.6, 5.8, sample_count), 0.0, 1.0)
+        negative_sentiment_ratio = np.clip(rng.beta(2.0, 4.2, sample_count), 0.0, 1.0)
+
+        test_coverage = np.clip(rng.normal(71, 16, sample_count), 5, 100)
+        ci_failures_rate = np.clip(rng.beta(1.8, 9.2, sample_count), 0.0, 1.0)
+        mean_pr_cycle_time_hours = np.clip(rng.normal(19, 9.5, sample_count), 1, 120)
+        release_stability_index = np.clip(rng.normal(0.68, 0.2, sample_count), 0.0, 1.0)
+
+        issue_to_commit_ratio = open_issues / np.maximum(commits_30d, 1)
+        bus_factor_inverse = 1 / np.sqrt(np.maximum(contributors_30d, 1))
+        developer_load_index = (open_issues + open_prs) / np.maximum(contributors_30d, 1)
+        commit_volatility = np.clip(rng.beta(2.5, 4.8, sample_count), 0.0, 1.0)
+
+        # Synthetic target that encodes nonlinear effects + interactions.
+        raw_target = (
+            10
+            + 9.5 * np.log1p(issue_to_commit_ratio)
+            + 18.0 * urgent_signal_ratio
+            + 14.5 * negative_sentiment_ratio
+            + 12.0 * ci_failures_rate
+            + 8.0 * code_churn_rate
+            + 6.2 * bug_fix_ratio
+            + 0.055 * developer_load_index
+            + 7.0 * commit_volatility
+            + 5.3 * bus_factor_inverse
+            + 0.035 * mean_pr_cycle_time_hours
+            - 0.26 * test_coverage
+            - 11.5 * release_stability_index
+            + np.where(commits_30d == 0, 15.0, 0.0)
+            + np.where(open_issues > 250, 8.0, 0.0)
+            + rng.normal(0, 3.2, sample_count)
+        )
+
+        risk_score = np.clip(raw_target, 0, 100)
+
+        dataset = pd.DataFrame(
+            {
+                "commits_30d": commits_30d,
+                "contributors_30d": contributors_30d,
+                "open_issues": open_issues,
+                "closed_issues_30d": closed_issues_30d,
+                "open_prs": open_prs,
+                "avg_commit_frequency": avg_commit_frequency,
+                "code_churn_rate": code_churn_rate,
+                "bug_fix_ratio": bug_fix_ratio,
+                "urgent_signal_ratio": urgent_signal_ratio,
+                "negative_sentiment_ratio": negative_sentiment_ratio,
+                "test_coverage": test_coverage,
+                "ci_failures_rate": ci_failures_rate,
+                "mean_pr_cycle_time_hours": mean_pr_cycle_time_hours,
+                "release_stability_index": release_stability_index,
+                "issue_to_commit_ratio": issue_to_commit_ratio,
+                "bus_factor_inverse": bus_factor_inverse,
+                "developer_load_index": developer_load_index,
+                "commit_volatility": commit_volatility,
+                "target_risk": risk_score,
+            }
+        )
+
+        dataset.to_csv(DATASET_ARTIFACT, index=False)
+        return dataset
+
+    def train_model(self) -> TrainingStatus:
+        dataset = self._generate_training_dataset()
+        x = dataset[self.feature_columns]
+        y = dataset["target_risk"]
+
+        x_train, x_test, y_train, y_test = train_test_split(
+            x,
+            y,
+            test_size=0.2,
+            random_state=42,
+        )
+
+        estimators: List[Tuple[str, Any]] = [
+            (
+                "rf",
+                RandomForestRegressor(
+                    n_estimators=260,
+                    max_depth=15,
+                    min_samples_leaf=2,
+                    random_state=42,
+                    n_jobs=-1,
+                ),
+            ),
+            (
+                "gbr",
+                GradientBoostingRegressor(
+                    n_estimators=250,
+                    learning_rate=0.05,
+                    max_depth=3,
+                    random_state=42,
+                ),
+            ),
+            (
+                "etr",
+                ExtraTreesRegressor(
+                    n_estimators=240,
+                    max_depth=14,
+                    min_samples_leaf=2,
+                    random_state=42,
+                    n_jobs=-1,
+                ),
+            ),
+        ]
+
+        model = StackingRegressor(
+            estimators=estimators,
+            final_estimator=Ridge(alpha=1.0),
+            cv=5,
+            n_jobs=-1,
+        )
+
+        self.pipeline = Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                ("model", model),
+            ]
+        )
+        self.pipeline.fit(x_train, y_train)
+
+        y_pred = self.pipeline.predict(x_test)
+        rmse = float(math.sqrt(mean_squared_error(y_test, y_pred)))
+        mae = float(mean_absolute_error(y_test, y_pred))
+        r2 = float(r2_score(y_test, y_pred))
+
+        metrics = {
+            "rmse": round(rmse, 4),
+            "mae": round(mae, 4),
+            "r2": round(r2, 4),
+        }
+
+        self.status = TrainingStatus(
+            trained=True,
+            model_name="StackingRegressor(RandomForest, GradientBoosting, ExtraTrees -> Ridge)",
+            model_version=MODEL_VERSION,
+            sample_count=int(dataset.shape[0]),
+            feature_count=len(self.feature_columns),
+            trained_at=datetime.utcnow().isoformat() + "Z",
+            metrics=metrics,
+            dataset_path=str(DATASET_ARTIFACT),
+        )
+
+        with MODEL_ARTIFACT.open("wb") as f:
+            pickle.dump(
+                {
+                    "pipeline": self.pipeline,
+                    "feature_columns": self.feature_columns,
+                },
+                f,
+            )
+
+        with STATUS_ARTIFACT.open("w", encoding="utf-8") as f:
+            json.dump(asdict(self.status), f, indent=2)
+
+        return self.status
+
+    def get_training_status(self) -> Dict[str, Any]:
+        return asdict(self.status)
+
+    def _to_feature_vector(self, feature_payload: Dict[str, float]) -> pd.DataFrame:
+        row = {col: float(feature_payload.get(col, 0.0)) for col in self.feature_columns}
+        # Ensure engineered fields are always coherent if omitted.
+        if row["issue_to_commit_ratio"] == 0:
+            row["issue_to_commit_ratio"] = row["open_issues"] / max(row["commits_30d"], 1)
+        if row["bus_factor_inverse"] == 0:
+            row["bus_factor_inverse"] = 1 / math.sqrt(max(row["contributors_30d"], 1.0))
+        if row["developer_load_index"] == 0:
+            row["developer_load_index"] = (row["open_issues"] + row["open_prs"]) / max(row["contributors_30d"], 1)
+        return pd.DataFrame([row], columns=self.feature_columns)
+
+    def _compute_factor_importance(
+        self,
+        feature_row: pd.Series,
+        model_risk: float,
+        nlp_signal_score: float,
+    ) -> Dict[str, float]:
+        # Human-readable weighted factors; keeps output deterministic.
+        weights = {
+            "issue_pressure": 0.24,
+            "delivery_risk": 0.18,
+            "code_stability": 0.17,
+            "quality_guardrails": 0.16,
+            "team_dynamics": 0.13,
+            "nlp_signal": 0.12,
+        }
+
+        issue_pressure = min(1.0, math.log1p(feature_row["issue_to_commit_ratio"]) / 2.2)
+        delivery_risk = min(1.0, (feature_row["open_prs"] / 120) + (feature_row["mean_pr_cycle_time_hours"] / 180))
+        code_stability = min(1.0, feature_row["code_churn_rate"] * 0.65 + feature_row["commit_volatility"] * 0.35)
+        quality_guardrails = min(1.0, (1 - feature_row["test_coverage"] / 100) * 0.65 + feature_row["ci_failures_rate"] * 0.35)
+        team_dynamics = min(1.0, feature_row["developer_load_index"] / 100 + feature_row["bus_factor_inverse"])
+        nlp_signal = min(1.0, nlp_signal_score / 100)
+
+        values = {
+            "issue_pressure": issue_pressure,
+            "delivery_risk": delivery_risk,
+            "code_stability": code_stability,
+            "quality_guardrails": quality_guardrails,
+            "team_dynamics": team_dynamics,
+            "nlp_signal": nlp_signal,
+        }
+
+        weighted = {k: round(v * weights[k], 4) for k, v in values.items()}
+        total = sum(weighted.values()) or 1.0
+        normalized = {k: round((v / total), 4) for k, v in weighted.items()}
+        normalized["model_risk_norm"] = round(model_risk / 100, 4)
+        return normalized
+
+    def predict(
+        self,
+        feature_payload: Dict[str, float],
+        nlp_signal_score: float,
+        blend_alpha: float = 0.8,
+    ) -> RiskPrediction:
+        if self.pipeline is None:
+            self.train_model()
+
+        features = self._to_feature_vector(feature_payload)
+        model = self.pipeline.named_steps["model"]
+
+        base_array = features.values
+        base_preds = []
+        for est in model.estimators_:
+            base_preds.append(float(est.predict(base_array)[0]))
+
+        ml_risk = float(self.pipeline.predict(features)[0])
+        ml_risk = float(np.clip(ml_risk, 0.0, 100.0))
+
+        # Ensemble spread + model RMSE as uncertainty proxy.
+        spread = float(np.std(base_preds))
+        rmse = float(self.status.metrics.get("rmse", 6.0))
+        uncertainty = float(np.clip((spread * 0.6 + rmse * 0.4) / 100, 0.01, 0.6))
+        confidence = float(np.clip(1.0 - uncertainty, 0.35, 0.99))
+
+        blended = float(np.clip((blend_alpha * ml_risk) + ((1 - blend_alpha) * nlp_signal_score), 0.0, 100.0))
+        factors = self._compute_factor_importance(features.iloc[0], ml_risk, nlp_signal_score)
+
+        return RiskPrediction(
+            predicted_risk_score=round(blended, 2),
+            confidence=round(confidence, 4),
+            uncertainty=round(uncertainty, 4),
+            ml_risk_score=round(ml_risk, 2),
+            blended_risk_score=round(blended, 2),
+            nlp_signal_score=round(float(nlp_signal_score), 2),
+            contributing_factors=factors,
+            model_name=self.status.model_name,
+            model_version=self.status.model_version,
             timestamp=datetime.utcnow().isoformat() + "Z",
-            forecast_next_24h=[risk_score + i*0.1 for i in range(24)]
         )
 
 
 class AnomalyDetector:
-    """Anomaly detection using Isolation Forest"""
-    
-    def __init__(self):
-        """Initialize anomaly detector"""
-        self.model = IsolationForest(contamination=0.1, random_state=42) if SKLEARN_AVAILABLE else None
-        self.scaler = StandardScaler()
-        
-    def detect_anomalies(self,
-                        temporal_data: List[Dict],
-                        signal_data: List[Dict]) -> Tuple[bool, float, List[Dict]]:
-        """
-        Detect anomalies in temporal and signal data
-        
-        Returns:
-            (is_anomalous, severity_score, anomalous_points)
-        """
-        if not SKLEARN_AVAILABLE or self.model is None:
-            return self._detect_anomalies_rule_based(temporal_data, signal_data)
-        
-        try:
-            # Extract features from temporal data
-            features = []
-            for data in temporal_data:
-                features.append([
-                    data.get('bugGrowth', 0),
-                    data.get('devIrregularity', 0),
-                ])
-            
-            if len(features) < 3:
-                return False, 0.0, []
-            
-            features = np.array(features)
-            
-            # Scale and predict
-            features_scaled = self.scaler.fit_transform(features)
-            predictions = self.model.predict(features_scaled)
-            scores = self.model.score_samples(features_scaled)
-            
-            # Analyze anomalies
-            anomalous_points = []
-            for i, (pred, score) in enumerate(zip(predictions, scores)):
-                if pred == -1:  # Anomaly
-                    severity = -score  # Convert to positive severity
-                    anomalous_points.append({
-                        'index': i,
-                        'timestamp': temporal_data[i].get('timestamp'),
-                        'severity': min(1.0, severity),
-                        'features': {
-                            'bugGrowth': temporal_data[i].get('bugGrowth'),
-                            'devIrregularity': temporal_data[i].get('devIrregularity')
-                        }
-                    })
-            
-            is_anomalous = len(anomalous_points) > 0
-            severity = max([p['severity'] for p in anomalous_points]) if anomalous_points else 0.0
-            
-            return is_anomalous, severity, anomalous_points
-            
-        except Exception as e:
-            print(f"Anomaly detection error: {e}")
-            return self._detect_anomalies_rule_based(temporal_data, signal_data)
-    
-    def _detect_anomalies_rule_based(self,
-                                     temporal_data: List[Dict],
-                                     signal_data: List[Dict]) -> Tuple[bool, float, List[Dict]]:
-        """Rule-based anomaly detection fallback"""
-        if len(temporal_data) < 2:
+    """Simple anomaly detector over temporal risk signals."""
+
+    def detect_anomalies(
+        self,
+        temporal_data: List[Dict[str, Any]],
+    ) -> Tuple[bool, float, List[Dict[str, Any]]]:
+        if len(temporal_data) < 3:
             return False, 0.0, []
-        
-        anomalous_points = []
-        
-        # Check for sudden spikes in bug growth
-        for i in range(1, len(temporal_data)):
-            prev_bug = temporal_data[i-1].get('bugGrowth', 0)
-            curr_bug = temporal_data[i].get('bugGrowth', 0)
-            
-            if prev_bug > 0:
-                change_ratio = curr_bug / prev_bug
-                if change_ratio > 2.0:  # More than 2x increase
-                    severity = min(1.0, (change_ratio - 1.0) / 3.0)
-                    anomalous_points.append({
-                        'index': i,
-                        'timestamp': temporal_data[i].get('timestamp'),
-                        'severity': severity,
-                        'type': 'spike'
-                    })
-        
-        is_anomalous = len(anomalous_points) > 0
-        severity = max([p['severity'] for p in anomalous_points]) if anomalous_points else 0.0
-        
-        return is_anomalous, severity, anomalous_points
+
+        bug_growth = np.array([float(x.get("bugGrowth", 0)) for x in temporal_data], dtype=float)
+        dev_irregularity = np.array([float(x.get("devIrregularity", 0)) for x in temporal_data], dtype=float)
+        combined = 0.6 * bug_growth + 0.4 * dev_irregularity
+
+        mean = float(np.mean(combined))
+        std = float(np.std(combined))
+        threshold = mean + max(1.5 * std, 8.0)
+
+        anomalies: List[Dict[str, Any]] = []
+        for idx, value in enumerate(combined):
+            if value > threshold:
+                severity = float(np.clip((value - threshold) / max(threshold, 1), 0.05, 1.0))
+                anomalies.append(
+                    {
+                        "index": idx,
+                        "timestamp": temporal_data[idx].get("timestamp"),
+                        "severity": round(severity, 4),
+                        "bugGrowth": bug_growth[idx],
+                        "devIrregularity": dev_irregularity[idx],
+                    }
+                )
+
+        if not anomalies:
+            return False, 0.0, []
+
+        return True, round(max(item["severity"] for item in anomalies), 4), anomalies
 
 
-# Singleton instances
-_risk_predictor = None
-_anomaly_detector = None
+_global_predictor: RiskScorePredictorML | None = None
+_global_anomaly_detector: AnomalyDetector | None = None
 
 
 def get_risk_predictor() -> RiskScorePredictorML:
-    """Get or create risk predictor instance"""
-    global _risk_predictor
-    if _risk_predictor is None:
-        _risk_predictor = RiskScorePredictorML()
-    return _risk_predictor
+    global _global_predictor
+    if _global_predictor is None:
+        _global_predictor = RiskScorePredictorML()
+    return _global_predictor
 
 
 def get_anomaly_detector() -> AnomalyDetector:
-    """Get or create anomaly detector instance"""
-    global _anomaly_detector
-    if _anomaly_detector is None:
-        _anomaly_detector = AnomalyDetector()
-    return _anomaly_detector
+    global _global_anomaly_detector
+    if _global_anomaly_detector is None:
+        _global_anomaly_detector = AnomalyDetector()
+    return _global_anomaly_detector

@@ -15,12 +15,16 @@ interface Props {
 export const CommitPulseMonitor = ({ timestamps, risk }: Props) => {
   // Build pulse data: group commits by "hour buckets" (last 24h)
   const pulseData = useMemo(() => {
-    const now = timestamps.length
-      ? Math.max(...timestamps.map((t) => new Date(t).getTime()))
-      : 0;
+    const latestTimestamp = timestamps
+      .map((t) => new Date(t).getTime())
+      .filter((value) => !Number.isNaN(value))
+      .reduce((max, value) => Math.max(max, value), 0);
+    const anchor = latestTimestamp > 0 ? latestTimestamp + 3_600_000 : 0;
     const buckets = Array.from({ length: 24 }, () => 0);
-    timestamps.forEach(t => {
-      const hoursAgo = Math.floor((now - new Date(t).getTime()) / 3_600_000);
+    timestamps.forEach((t) => {
+      const ts = new Date(t).getTime();
+      if (Number.isNaN(ts) || anchor === 0) return;
+      const hoursAgo = Math.floor((anchor - ts) / 3_600_000);
       if (hoursAgo >= 0 && hoursAgo < 24) buckets[23 - hoursAgo]++;
     });
     return buckets;

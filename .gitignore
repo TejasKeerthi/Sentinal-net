@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -23,11 +28,14 @@ dist-ssr
 *.sln
 *.sw?
 
-# Python
+# Python cache artifacts
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
 *.pyd
 .venv/
 venv/
 env/
+
+# Generated ML binary artifact
+backend/models/*.pkl

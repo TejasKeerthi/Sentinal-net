@@ -1,856 +1,506 @@
 """
-GitHub Repository Analyzer
-Analyzes real GitHub repositories and provides software reliability metrics
-Now with NLP-powered semantic analysis!
+GitHub repository analyzer for Sentinel-Net.
+Collects repository signals, runs NLP classification, computes engineered
+features, and invokes the trained ML model for risk scoring.
 """
+
+from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
-from typing import List, Dict
+from typing import Any, Dict, List, Tuple
 
-from ml_risk_model import get_risk_model
+from ml_models import get_risk_predictor
+from nlp_processor import get_processor
 
 try:
     from github import Github, GithubException
+
     GITHUB_AVAILABLE = True
 except ImportError:
     GITHUB_AVAILABLE = False
 
-# Import NLP processor
-from nlp_processor import get_processor
-
 
 class GitHubAnalyzer:
-    """Analyze real GitHub repositories for software reliability"""
-    
-    def __init__(self, github_token: str = None):
-        """
-        Initialize GitHub analyzer
-        
-        Args:
-            github_token: GitHub API token (optional, for higher rate limits)
-                         Get one at: https://github.com/settings/tokens
-        """
+    def __init__(self, github_token: str | None = None) -> None:
         self.token = github_token or os.getenv("GITHUB_TOKEN")
-        if GITHUB_AVAILABLE:
-            self.client = Github(self.token) if self.token else Github()
-        else:
-            self.client = None
-        self.risk_model = get_risk_model()
-    
-    def analyze_repo(self, repo_url: str) -> Dict:
-        """
-        Analyze a GitHub repository and return reliability metrics
-        
-        Args:
-            repo_url: GitHub repo URL (e.g., "https://github.com/owner/repo" or "owner/repo")
-        
-        Returns:
-            Dictionary with metrics, signals, trends, and insights
-        """
-        if not GITHUB_AVAILABLE:
-            return self._mock_analysis(repo_url)
-        
+        self.client = Github(self.token) if GITHUB_AVAILABLE else None
+
+    def analyze_repo(self, repo_url: str) -> Dict[str, Any]:
+        repo_path = self._extract_repo_path(repo_url)
+
+        if not GITHUB_AVAILABLE or self.client is None:
+            return self._fallback_analysis(repo_path, "PyGithub unavailable, using synthetic repo profile")
+
         try:
-            # Extract owner/repo from URL
-            repo_path = self._extract_repo_path(repo_url)
             repo = self.client.get_repo(repo_path)
-            
-            # Analyze different aspects
-            metrics = self._calculate_metrics(repo)
-            signals = self._extract_signals(repo)
-            temporal_data = self._analyze_temporal_trends(repo)
-            conflict_data = self._analyze_merge_conflicts(repo)
-            
-            # Adjust metrics based on merge conflicts
-            if conflict_data["conflict_risk_score"] > 0:
-                metrics["failureRiskScore"] = min(100, 
-                    int(round(metrics["failureRiskScore"] * 0.7 + conflict_data["conflict_risk_score"] * 0.3))
-                )
-                # Update health status based on adjusted risk
-                if metrics["failureRiskScore"] > 85:
-                    metrics["systemHealth"] = "Critical"
-                elif metrics["failureRiskScore"] > 70:
-                    metrics["systemHealth"] = "Warning"
-            
-            insight = self._generate_insight(repo, metrics, signals, conflict_data)
-            
+        except GithubException as exc:
+            return self._fallback_analysis(repo_path, f"GitHub API error: {exc.data if hasattr(exc, 'data') else str(exc)}")
+        except Exception as exc:
+            return self._fallback_analysis(repo_path, f"Repository fetch error: {str(exc)}")
+
+        try:
+            commits_30d, commits_sample = self._recent_commits(repo, limit=80)
+            contributors_30d = self._count_contributors(commits_sample)
+            open_issues = int(repo.open_issues_count)
+            closed_issues_30d = self._count_closed_issues(repo)
+            open_prs, prs_sample = self._open_prs(repo)
+
+            signals = self._extract_signals(commits_sample, repo)
+            temporal_data = self._temporal_trends(commits_sample)
+            nlp_score, nlp_insights = self._nlp_signal_score(signals)
+
+            features = self._engineer_features(
+                commits_30d=commits_30d,
+                contributors_30d=contributors_30d,
+                open_issues=open_issues,
+                closed_issues_30d=closed_issues_30d,
+                open_prs=open_prs,
+                signals=signals,
+                prs_sample=prs_sample,
+            )
+
+            predictor = get_risk_predictor()
+            prediction = predictor.predict(features, nlp_signal_score=nlp_score, blend_alpha=0.82)
+
+            risk_score = int(round(prediction.predicted_risk_score))
+            health = self._health_from_score(risk_score)
+            ai_insight = self._build_ai_insight(
+                repo_name=repo.full_name,
+                risk_score=risk_score,
+                features=features,
+                nlp_insights=nlp_insights,
+                prediction_factors=prediction.contributing_factors,
+            )
+
+            metadata = {
+                "commits_30d": commits_30d,
+                "contributors_30d": contributors_30d,
+                "open_issues": open_issues,
+                "closed_issues_30d": closed_issues_30d,
+                "open_prs": open_prs,
+                "model_name": prediction.model_name,
+                "model_version": prediction.model_version,
+                "ml_prediction": prediction.ml_risk_score,
+                "nlp_signal_score": prediction.nlp_signal_score,
+                "blended_score": prediction.blended_risk_score,
+                "confidence": prediction.confidence,
+                "uncertainty": prediction.uncertainty,
+                "contributing_factors": prediction.contributing_factors,
+            }
+
             return {
-                "metrics": metrics,
+                "metrics": {
+                    "failureRiskScore": risk_score,
+                    "lastUpdated": datetime.utcnow().isoformat() + "Z",
+                    "systemHealth": health,
+                    "metadata": metadata,
+                },
                 "signals": signals,
                 "temporalData": temporal_data,
-                "aiInsights": insight,
-                "mergeConflicts": conflict_data,
+                "aiInsights": ai_insight,
                 "repoInfo": {
                     "name": repo.full_name,
                     "description": repo.description,
                     "url": repo.html_url,
                     "stars": repo.stargazers_count,
                     "forks": repo.forks_count,
-                }
+                },
+                "riskBreakdown": {
+                    "risk_score": risk_score,
+                    "confidence": prediction.confidence,
+                    "uncertainty": prediction.uncertainty,
+                    "ml_risk_score": prediction.ml_risk_score,
+                    "nlp_signal_score": prediction.nlp_signal_score,
+                    "blended_risk_score": prediction.blended_risk_score,
+                    "reasoning_factors": prediction.contributing_factors,
+                },
             }
-        except GithubException as e:
-            return {
-                "error": f"GitHub API Error: {str(e)}",
-                "message": "Could not access repository. Check URL and GitHub token.",
-                "fallback": True
-            }
-        except Exception as e:
-            return {
-                "error": f"Analysis Error: {str(e)}",
-                "fallback": True
-            }
-    
+
+        except Exception as exc:
+            return self._fallback_analysis(repo_path, f"Analysis pipeline error: {str(exc)}")
+
     def _extract_repo_path(self, repo_url: str) -> str:
-        """Extract owner/repo from GitHub URL"""
-        # Handle different URL formats
-        if "github.com/" in repo_url:
-            # Extract from URL
-            parts = repo_url.split("github.com/")[1].strip("/").split("/")
-            return f"{parts[0]}/{parts[1]}"
-        else:
-            # Assume it's already in owner/repo format
-            return repo_url.strip("/")
-    
-    def _calculate_metrics(self, repo) -> Dict:
-        """Calculate software reliability metrics with NLP enhancement"""
-        commits_30d = self._count_recent_commits(repo, days=30)
-        contributors_30d = self._count_recent_contributors(repo, days=30)
-        open_issues = repo.open_issues_count
-        prediction = self.risk_model.predict_risk_details(
-            commits_30d=commits_30d,
-            contributors_30d=contributors_30d,
-            open_issues=open_issues,
-        )
+        value = repo_url.strip()
+        if "github.com/" in value:
+            value = value.split("github.com/")[1]
+        value = value.replace(".git", "").strip("/")
+        parts = value.split("/")
+        if len(parts) < 2:
+            raise ValueError("Repository must be in owner/repo format")
+        return f"{parts[0]}/{parts[1]}"
 
-        nlp_score = self._calculate_risk_score_nlp(
-            repo,
-            commits_30d,
-            contributors_30d,
-            open_issues,
-        )
+    def _recent_commits(self, repo: Any, limit: int) -> Tuple[int, List[Any]]:
+        since = datetime.utcnow() - timedelta(days=30)
+        commits = list(repo.get_commits(since=since)[:limit])
+        return len(commits), commits
 
-        # Blend project-specific ensemble output with NLP risk signals.
-        risk_score = int(round((0.75 * prediction["risk_score"]) + (0.25 * nlp_score)))
-        risk_score = max(0, min(100, risk_score))
-        
-        # Health status
-        if risk_score > 85:
-            health = "Critical"
-        elif risk_score > 70:
-            health = "Warning"
-        else:
-            health = "Nominal"
-        
-        return {
-            "failureRiskScore": risk_score,
-            "lastUpdated": datetime.utcnow().isoformat() + "Z",
-            "systemHealth": health,
-            "metadata": {
-                "commits_30d": commits_30d,
-                "contributors_30d": contributors_30d,
-                "open_issues": open_issues,
-                "prediction": prediction,
-                "nlp_risk_score": nlp_score,
-                "risk_model": self.risk_model.get_status(),
-            }
-        }
-    
-    def _count_recent_commits(self, repo, days: int = 30) -> int:
-        """Count commits in last N days"""
-        try:
-            since = datetime.utcnow() - timedelta(days=days)
-            commits = repo.get_commits(since=since)
-            return commits.totalCount
-        except:
-            return 0
-    
-    def _count_recent_contributors(self, repo, days: int = 30) -> int:
-        """Count unique contributors in last N days"""
-        try:
-            since = datetime.utcnow() - timedelta(days=days)
-            commits = repo.get_commits(since=since)
-            contributors = set()
-            for commit in commits[:100]:  # Limit to avoid rate limits
-                if commit.author:
-                    contributors.add(commit.author.login)
-            return len(contributors)
-        except:
-            return 0
-    
-    def _calculate_risk_score_nlp(self, repo, commits: int, contributors: int, issues: int) -> int:
-        """
-        Calculate failure risk score (0-100) using NLP analysis.
-        
-        Algorithm:
-          - Base score: 30 (neutral starting point)
-          - NLP signals from recent commits: each bug +4, each urgent +6, each high-risk +8
-          - Issue-to-commit ratio: high ratio = more risk
-          - Stale repo (no recent commits): big risk penalty  
-          - High contributor count: slight coordination risk
-          - Low activity: moderate risk
-          - Clamped to integer 0-100
-        """
-        score = 30  # Neutral base (lower than before — we are less alarmist)
+    def _count_contributors(self, commits: List[Any]) -> int:
+        unique = set()
+        for commit in commits:
+            if commit.author and getattr(commit.author, "login", None):
+                unique.add(commit.author.login)
+            elif commit.commit and commit.commit.author and commit.commit.author.email:
+                unique.add(commit.commit.author.email)
+        return len(unique)
+
+    def _count_closed_issues(self, repo: Any) -> int:
+        since = datetime.utcnow() - timedelta(days=30)
+        closed = repo.get_issues(state="closed", since=since)
+        count = 0
+        for idx, issue in enumerate(closed):
+            if idx >= 120:
+                break
+            if not issue.pull_request:
+                count += 1
+        return count
+
+    def _open_prs(self, repo: Any) -> Tuple[int, List[Any]]:
+        prs = list(repo.get_pulls(state="open")[:80])
+        return len(prs), prs
+
+    def _extract_signals(self, commits: List[Any], repo: Any) -> List[Dict[str, Any]]:
         nlp = get_processor()
-        
-        # Analyze recent commits for NLP risk signals
-        try:
-            bug_count = 0
-            urgent_count = 0
-            high_risk_count = 0
-            positive_count = 0
-            
-            sampled_commits = list(repo.get_commits()[:15])  # Sample up to 15 commits
-            
-            for commit in sampled_commits:
-                msg = commit.commit.message.split("\n")[0]
-                analysis = nlp.analyze(msg)
-                
-                if analysis.is_bug_related:
-                    bug_count += 1
-                if analysis.has_urgency:
-                    urgent_count += 1
-                if analysis.risk_level in ["high", "critical"]:
-                    high_risk_count += 1
-                if analysis.sentiment_label == "positive":
-                    positive_count += 1
-            
-            # NLP risk additions (weighted)
-            if len(sampled_commits) > 0:
-                bug_ratio = bug_count / len(sampled_commits)
-                score += int(bug_ratio * 20)      # Up to +20 if all commits are bug fixes
-                score += urgent_count * 4          # Each urgent signal = +4
-                score += high_risk_count * 5       # Each high-risk = +5
-                score -= int(positive_count * 1.5) # Positive signals reduce risk slightly
-        except Exception:
-            pass
-        
-        # Issue-to-commit ratio risk
-        if commits > 0:
-            issue_ratio = issues / max(commits, 1)
-            if issue_ratio > 2.0:
-                score += 15  # Many more issues than commits
-            elif issue_ratio > 1.0:
-                score += 8
-            elif issue_ratio > 0.5:
-                score += 3
-        
-        # Open issue volume
-        if issues > 100:
-            score += 12
-        elif issues > 50:
-            score += 8
-        elif issues > 20:
-            score += 4
-        
-        # Activity risk: no recent commits = stale/abandoned project risk
-        if commits == 0:
-            score += 20  # No activity in 30 days
-        elif commits < 3:
-            score += 10  # Very low activity
-        
-        # Contributor coordination risk
-        if contributors > 30:
-            score += 8
-        elif contributors > 15:
-            score += 4
-        
-        # Positive: active healthy project gets risk reduction
-        if commits > 20 and issues < 10 and contributors >= 2:
-            score -= 10  # Healthy active project
-        
-        # Always clamp to 0-100 integer
-        return max(0, min(100, int(round(score))))
+        signals: List[Dict[str, Any]] = []
 
-    def _calculate_risk_score(self, commits: int, contributors: int, issues: int) -> int:
-        """
-        Calculate failure risk score (0-100) from trained model.
-        Lower is better (less risk).
-        """
-        return self.risk_model.predict_risk_score(
-            commits_30d=commits,
-            contributors_30d=contributors,
-            open_issues=issues,
-        )
-    
-    def _extract_signals(self, repo) -> List[Dict]:
-        """Extract recent signals (commits, issues, PRs) with NLP analysis and conflict detection"""
-        signals = []
-        nlp = get_processor()
-        
-        try:
-            # Recent commits - with NLP analysis
-            for commit in repo.get_commits()[:5]:
-                commit_message = commit.commit.message.split("\n")[0][:120]
-                analysis = nlp.analyze(commit_message)
-                
-                # Determine status based on NLP analysis
-                if analysis.is_bug_related:
-                    status = "Urgent"
-                elif analysis.sentiment_score < -0.3:
-                    status = "Negative"
-                else:
-                    status = "Neutral"
-                
-                signals.append({
+        for commit in commits[:6]:
+            message = commit.commit.message.split("\n")[0][:140]
+            analysis = nlp.analyze(message)
+            status = self._status_from_nlp(analysis.risk_level, analysis.sentiment_score, analysis.has_urgency)
+            signals.append(
+                {
                     "id": commit.sha[:8],
                     "timestamp": commit.commit.author.date.isoformat() + "Z",
-                    "message": commit_message,
+                    "message": message,
                     "status": status,
                     "source": "commit",
                     "nlp": {
                         "intent": analysis.intent_category,
                         "sentiment": analysis.sentiment_label,
                         "risk_level": analysis.risk_level,
-                        "keywords": analysis.keywords[:3],
+                        "keywords": analysis.keywords[:4],
                         "has_urgency": analysis.has_urgency,
-                        "is_bug": analysis.is_bug_related
-                    }
-                })
-            
-            # Recent issues - with NLP analysis
-            for issue in repo.get_issues(state="open", sort="updated")[:3]:
-                issue_text = f"{issue.title} {issue.body or ''}"
-                analysis = nlp.analyze(issue_text)
-                
-                # Determine status based on NLP
-                if analysis.is_bug_related or "bug" in issue.title.lower():
-                    status = "Urgent"
-                elif analysis.risk_level in ["high", "critical"]:
-                    status = "Urgent"
-                elif analysis.sentiment_score < -0.2:
-                    status = "Negative"
-                else:
-                    status = "Neutral"
-                
-                signals.append({
+                        "is_bug": analysis.is_bug_related,
+                    },
+                }
+            )
+
+        open_issues = repo.get_issues(state="open", sort="updated")
+        for issue in open_issues[:4]:
+            if issue.pull_request:
+                continue
+            text = f"{issue.title} {issue.body or ''}"[:800]
+            analysis = nlp.analyze(text)
+            status = self._status_from_nlp(analysis.risk_level, analysis.sentiment_score, analysis.has_urgency)
+            signals.append(
+                {
                     "id": f"issue-{issue.number}",
                     "timestamp": issue.updated_at.isoformat() + "Z",
-                    "message": issue.title[:80],
+                    "message": issue.title[:120],
                     "status": status,
                     "source": "issue",
                     "nlp": {
                         "intent": analysis.intent_category,
                         "sentiment": analysis.sentiment_label,
                         "risk_level": analysis.risk_level,
-                        "keywords": analysis.keywords[:3],
+                        "keywords": analysis.keywords[:4],
                         "has_urgency": analysis.has_urgency,
-                        "is_bug": analysis.is_bug_related
-                    }
-                })
-            
-            # Recent pull requests - with NLP analysis and conflict detection
-            for pr in repo.get_pulls(state="open")[:2]:
-                pr_text = f"{pr.title} {pr.body or ''}"
-                analysis = nlp.analyze(pr_text)
-                
-                # Check for merge conflicts
-                has_conflicts = False
-                try:
-                    if pr.mergeable is False or (pr.mergeable is None and self._detect_conflicts_in_diff(pr)):
-                        has_conflicts = True
-                except:
-                    pass
-                
-                # Determine status
-                if has_conflicts:
-                    status = "Urgent"
-                elif analysis.risk_level in ["high", "critical"]:
-                    status = "Negative"
-                elif analysis.has_urgency:
-                    status = "Urgent"
-                else:
-                    status = "Neutral"
-                
-                conflict_indicator = " [MERGE CONFLICTS]" if has_conflicts else ""
-                
-                signals.append({
-                    "id": f"pr-{pr.number}",
-                    "timestamp": pr.updated_at.isoformat() + "Z",
-                    "message": f"PR: {pr.title[:60]}{conflict_indicator}",
-                    "status": status,
-                    "source": "alert",
-                    "nlp": {
-                        "intent": analysis.intent_category,
-                        "sentiment": analysis.sentiment_label,
-                        "risk_level": analysis.risk_level,
-                        "keywords": analysis.keywords[:3],
-                        "has_urgency": analysis.has_urgency,
-                        "is_bug": analysis.is_bug_related
-                    }
-                })
-        except Exception as e:
-            # Fallback if NLP processing fails
-            pass
-        
-        return signals[:6]  # Return top 6
-    
-    def _analyze_temporal_trends(self, repo) -> List[Dict]:
-        """Analyze commit trends over time"""
-        trends = []
-        
-        try:
-            now = datetime.utcnow()
-            for day in range(7, -1, -1):  # Last 7 days
-                date = now - timedelta(days=day)
-                since = date
-                until = date + timedelta(days=1)
-                
-                commits = repo.get_commits(since=since, until=until)
-                count = commits.totalCount
-                
-                trends.append({
-                    "timestamp": f"{6-day}d ago",
-                    "bugGrowth": max(10, count * 2),
-                    "devIrregularity": min(50, count // 2) if count > 0 else 10
-                })
-        except:
-            # Fallback to mock trend
-            trends = [
-                {"timestamp": "6d ago", "bugGrowth": 12, "devIrregularity": 8},
-                {"timestamp": "5d ago", "bugGrowth": 18, "devIrregularity": 12},
-                {"timestamp": "4d ago", "bugGrowth": 24, "devIrregularity": 15},
-                {"timestamp": "3d ago", "bugGrowth": 32, "devIrregularity": 22},
-                {"timestamp": "2d ago", "bugGrowth": 38, "devIrregularity": 28},
-                {"timestamp": "1d ago", "bugGrowth": 42, "devIrregularity": 32},
-                {"timestamp": "Today", "bugGrowth": 45, "devIrregularity": 35},
-            ]
-        
-        return trends
-    
-    def _analyze_merge_conflicts(self, repo) -> Dict:
-        """
-        Analyze merge conflicts in pull requests with high accuracy
-        Returns: conflict_data with count, severity, and details
-        """
-        conflict_data = {
-            "total_prs_checked": 0,
-            "prs_with_conflicts": 0,
-            "conflict_severity": "none",  # none, low, medium, high, critical
-            "conflict_risk_score": 0,  # 0-100
-            "conflicts_by_file_type": {},
-            "conflicting_prs": [],
-            "resolution_difficulty": "easy",  # easy, moderate, difficult, complex
-            "metrics": {
-                "avg_conflicts_per_pr": 0,
-                "max_conflicts_in_single_pr": 0,
-                "merge_conflict_rate": 0.0,
-                "files_most_conflicted": []
-            }
-        }
-        
-        try:
-            nlp = get_processor()
-            prs = repo.get_pulls(state="open")
-            all_conflicts = []
-            
-            for pr in prs:
-                conflict_data["total_prs_checked"] += 1
-                
-                try:
-                    # Check if PR has merge conflicts
-                    mergeable = pr.mergeable
-                    
-                    if mergeable is None:
-                        # GitHub is still computing mergeability, check diff
-                        conflicts = self._detect_conflicts_in_diff(pr)
-                    elif not mergeable:
-                        conflicts = self._detect_conflicts_in_diff(pr)
-                    else:
-                        conflicts = []
-                    
-                    if conflicts:
-                        conflict_data["prs_with_conflicts"] += 1
-                        all_conflicts.extend(conflicts)
-                        
-                        # NLP analysis of PR description for resolution complexity
-                        pr_text = f"{pr.title} {pr.body or ''}"
-                        analysis = nlp.analyze(pr_text)
-                        
-                        conflicting_pr_info = {
-                            "pr_number": pr.number,
-                            "title": pr.title,
-                            "files_count": pr.changed_files,
-                            "additions": pr.additions,
-                            "deletions": pr.deletions,
-                            "conflict_count": len(conflicts),
-                            "conflicted_files": [c["file"] for c in conflicts],
-                            "updated_at": pr.updated_at.isoformat() + "Z",
-                            "resolution_difficulty": self._assess_conflict_difficulty(
-                                conflicts, pr, analysis
-                            ),
-                            "nlp_complexity": analysis.risk_level
-                        }
-                        conflict_data["conflicting_prs"].append(conflicting_pr_info)
-                        
-                except Exception as e:
-                    # PR might be closed or inaccessible
-                    pass
-            
-            # Calculate metrics
-            if conflict_data["total_prs_checked"] > 0:
-                conflict_data["metrics"]["merge_conflict_rate"] = round(
-                    conflict_data["prs_with_conflicts"] / conflict_data["total_prs_checked"] * 100, 2
-                )
-            
-            if conflict_data["prs_with_conflicts"] > 0:
-                conflict_data["metrics"]["avg_conflicts_per_pr"] = round(
-                    len(all_conflicts) / conflict_data["prs_with_conflicts"], 1
-                )
-            
-            # Analyze file types and frequency
-            file_conflicts = {}
-            for conflict in all_conflicts:
-                file_type = conflict["file"].split(".")[-1] if "." in conflict["file"] else "unknown"
-                file_conflicts[file_type] = file_conflicts.get(file_type, 0) + 1
-            
-            conflict_data["conflicts_by_file_type"] = file_conflicts
-            
-            # Find most conflicted files
-            if all_conflicts:
-                file_frequency = {}
-                for conflict in all_conflicts:
-                    file_frequency[conflict["file"]] = file_frequency.get(conflict["file"], 0) + 1
-                sorted_files = sorted(file_frequency.items(), key=lambda x: x[1], reverse=True)
-                conflict_data["metrics"]["files_most_conflicted"] = [
-                    {"file": f, "conflict_count": c} for f, c in sorted_files[:5]
-                ]
-                conflict_data["metrics"]["max_conflicts_in_single_pr"] = max(
-                    [c["conflict_count"] for c in conflict_data["conflicting_prs"]], default=0
-                )
-            
-            # Determine overall severity
-            if conflict_data["prs_with_conflicts"] == 0:
-                conflict_data["conflict_severity"] = "none"
-                conflict_data["conflict_risk_score"] = 0
-            elif conflict_data["metrics"]["merge_conflict_rate"] > 50:
-                conflict_data["conflict_severity"] = "critical"
-                conflict_data["conflict_risk_score"] = 95
-            elif conflict_data["metrics"]["merge_conflict_rate"] > 30:
-                conflict_data["conflict_severity"] = "high"
-                conflict_data["conflict_risk_score"] = 75
-            elif conflict_data["metrics"]["merge_conflict_rate"] > 15:
-                conflict_data["conflict_severity"] = "medium"
-                conflict_data["conflict_risk_score"] = 50
-            else:
-                conflict_data["conflict_severity"] = "low"
-                conflict_data["conflict_risk_score"] = 25
-            
-            # Assess overall resolution difficulty
-            if conflict_data["conflicting_prs"]:
-                difficulties = [p["resolution_difficulty"] for p in conflict_data["conflicting_prs"]]
-                difficulty_score = {"easy": 1, "moderate": 2, "difficult": 3, "complex": 4}
-                avg_difficulty = sum(difficulty_score.get(d, 0) for d in difficulties) / len(difficulties)
-                
-                if avg_difficulty > 3:
-                    conflict_data["resolution_difficulty"] = "complex"
-                elif avg_difficulty > 2:
-                    conflict_data["resolution_difficulty"] = "difficult"
-                elif avg_difficulty > 1:
-                    conflict_data["resolution_difficulty"] = "moderate"
-                else:
-                    conflict_data["resolution_difficulty"] = "easy"
-            
-        except Exception as e:
-            conflict_data["error"] = str(e)
-        
-        return conflict_data
-    
-    def _detect_conflicts_in_diff(self, pr) -> List[Dict]:
-        """
-        Analyze PR diff to detect merge conflicts
-        Returns list of conflict details
-        """
-        conflicts = []
-        
-        try:
-            # Get all files in the PR
-            for file_change in pr.get_files():
-                conflict_markers = self._detect_conflict_markers(file_change.patch or "")
-                
-                if conflict_markers:
-                    conflicts.append({
-                        "file": file_change.filename,
-                        "conflict_count": len(conflict_markers),
-                        "additions": file_change.additions,
-                        "deletions": file_change.deletions,
-                        "changes": file_change.changes,
-                        "is_binary": file_change.patch is None,
-                        "conflict_markers": conflict_markers
-                    })
-        except Exception as e:
-            pass
-        
-        return conflicts
-    
-    def _detect_conflict_markers(self, patch: str) -> List[Dict]:
-        """
-        Detect <<<<<<< ======= >>>>>>> conflict markers in patch text
-        Returns list of conflict marker positions
-        """
-        markers = []
-        lines = patch.split('\n')
-        
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            
-            # Look for opening conflict marker
-            if line.startswith('<<<<<<<'):
-                conflict_start = i
-                separator_line = None
-                end_line = None
-                
-                # Find separator and end markers
-                for j in range(i + 1, min(i + 1000, len(lines))):  # Limit search to 1000 lines
-                    if lines[j].startswith('=======') and separator_line is None:
-                        separator_line = j
-                    elif lines[j].startswith('>>>>>>>'):
-                        end_line = j
-                        break
-                
-                if separator_line and end_line:
-                    conflict_block = {
-                        "start": conflict_start,
-                        "separator": separator_line,
-                        "end": end_line,
-                        "lines_in_conflict": end_line - conflict_start + 1,
-                        "branch_a_lines": separator_line - conflict_start - 1,
-                        "branch_b_lines": end_line - separator_line - 1
-                    }
-                    markers.append(conflict_block)
-                    i = end_line
-            
-            i += 1
-        
-        return markers
-    
-    def _assess_conflict_difficulty(self, conflicts: List[Dict], pr, nlp_analysis) -> str:
-        """
-        Assess how difficult it will be to resolve these conflicts
-        """
-        if not conflicts:
-            return "easy"
-        
-        # Scoring factors
-        score = 0
-        
-        # Factor 1: Number of conflicts
-        score += min(len(conflicts) * 10, 30)
-        
-        # Factor 2: File types involved
-        risky_extensions = {'.cs', '.java', '.ts', '.tsx', '.jsx', '.py', '.cpp', '.c', '.h'}
-        for conflict in conflicts:
-            if any(conflict["file"].endswith(ext) for ext in risky_extensions):
-                score += 5
-            # Binary files are very hard to merge
-            if conflict["is_binary"]:
-                score += 15
-        
-        # Factor 3: Size of conflicts
-        total_conflict_lines = sum(c.get("lines_in_conflict", 0) for c in conflicts)
-        score += min(total_conflict_lines // 10, 25)
-        
-        # Factor 4: PR changes magnitude
-        if pr.changed_files > 30:
-            score += 10
-        if pr.additions > 500:
-            score += 5
-        
-        # Factor 5: NLP complexity indicator
-        if nlp_analysis.risk_level in ["high", "critical"]:
-            score += 10
-        if nlp_analysis.has_urgency:
-            score += 5
-        
-        # Categorize difficulty
-        if score > 60:
-            return "complex"
-        elif score > 40:
-            return "difficult"
-        elif score > 20:
-            return "moderate"
-        else:
-            return "easy"
-        
-        return trends
-    
-    def _generate_insight(self, repo, metrics: Dict, signals: List, conflict_data: Dict = None) -> Dict:
-        """Generate AI insight based on NLP analysis of signals, metrics, and merge conflicts"""
-        if conflict_data is None:
-            conflict_data = {}
-        
-        risk_score = metrics["failureRiskScore"]
-        commits = metrics["metadata"]["commits_30d"]
-        issues = metrics["metadata"]["open_issues"]
-        contributors = metrics["metadata"]["contributors_30d"]
-        nlp = get_processor()
-        
-        # Analyze signals for NLP insights
-        bug_signals = [s for s in signals if s.get("nlp", {}).get("is_bug", False)]
-        urgent_signals = [s for s in signals if s.get("status") == "Urgent"]
-        high_risk_signals = [s for s in signals if s.get("nlp", {}).get("risk_level") in ["high", "critical"]]
-        
-        # Extract keywords from all signals
-        all_keywords = []
-        for signal in signals:
-            if signal.get("nlp", {}).get("keywords"):
-                all_keywords.extend(signal.get("nlp", {}).get("keywords", []))
-        
-        # Build insight title based on findings (conflicts take priority)
-        if conflict_data and conflict_data.get("prs_with_conflicts", 0) > 0:
-            if conflict_data["conflict_severity"] in ["critical", "high"]:
-                title = f"Critical: Merge Conflicts Blocking {conflict_data['prs_with_conflicts']} PRs"
-            else:
-                title = f"Attention: Merge Conflicts in Pull Requests"
-        elif len(high_risk_signals) > 0:
-            title = "Critical Issues Detected in Repository"
-        elif len(bug_signals) >= 2:
-            title = "Multiple Bug Fixes Identified"
-        elif risk_score > 70:
-            title = "Elevated Software Reliability Risk"
-        elif commits == 0:
-            title = "Inactive Repository Detected"
-        elif issues > 20:
-            title = "High Critical Issue Count"
-        else:
-            title = "Repository Activity Analysis"
-        
-        # Build factors from NLP + metrics + conflicts
-        factors = []
-        
-        # Add merge conflict factors (highest priority)
-        if conflict_data:
-            if conflict_data.get("prs_with_conflicts", 0) > 0:
-                if conflict_data["conflict_severity"] == "critical":
-                    factors.append(f"🚨 CRITICAL: {conflict_data['prs_with_conflicts']} PRs with merge conflicts ({conflict_data['metrics']['merge_conflict_rate']}% conflict rate)")
-                elif conflict_data["conflict_severity"] == "high":
-                    factors.append(f"⚠️ HIGH: {conflict_data['prs_with_conflicts']} PRs with merge conflicts, {conflict_data['metrics']['avg_conflicts_per_pr']:.1f} avg conflicts/PR")
-                elif conflict_data["conflict_severity"] == "medium":
-                    factors.append(f"⚠️ MEDIUM: {conflict_data['prs_with_conflicts']} PRs with merge conflicts")
-                else:
-                    factors.append(f"ℹ️ LOW: {conflict_data['prs_with_conflicts']} PR with merge conflicts")
-                
-                # Add file type info
-                if conflict_data.get('conflicts_by_file_type'):
-                    file_types = [f"{ft} ({c})" for ft, c in conflict_data['conflicts_by_file_type'].items()]
-                    factors.append(f"✗ Conflicts in: {', '.join(file_types)}")
-                
-                # Add most conflicted files
-                if conflict_data.get('metrics', {}).get('files_most_conflicted'):
-                    top_file = conflict_data['metrics']['files_most_conflicted'][0]
-                    factors.append(f"📄 Most conflicted: {top_file['file']} ({top_file['conflict_count']} times)")
-                
-                # Add resolution difficulty
-                factors.append(f"🔧 Resolution difficulty: {conflict_data.get('resolution_difficulty', 'unknown')}")
-        
-        # NLP-based factors
-        if len(bug_signals) > 0:
-            factors.append(f"Bug fixes detected in {len(bug_signals)} recent signals")
-        
-        if len(urgent_signals) > len([s for s in urgent_signals if "[MERGE CONFLICTS]" in s.get("message", "")]):
-            non_conflict_urgent = len([s for s in urgent_signals if "[MERGE CONFLICTS]" not in s.get("message", "")])
-            if non_conflict_urgent > 0:
-                factors.append(f"Urgent items identified: {non_conflict_urgent} signals require attention")
-        
-        if len(high_risk_signals) > 0:
-            factors.append(f"High-risk signals: {len(high_risk_signals)} items flagged for review")
-        
-        # Metrics-based factors
-        if commits > 0:
-            factors.append(f"Recent activity: {commits} commits by {contributors} unique contributors in last 30 days")
-        else:
-            factors.append(f"No commits in the last 30 days - repository appears inactive")
-        
-        if issues > 0:
-            factors.append(f"Open issues requiring attention: {issues} items")
-        
-        if contributors > 15:
-            factors.append(f"High contributor count ({contributors}) may indicate coordination challenges")
-
-        model_status = self.risk_model.get_status()
-        prediction = metrics["metadata"].get("prediction", {})
-        if model_status.get("trained"):
-            factors.append(
-                "ML risk model active: "
-                f"{model_status.get('model')} trained on {model_status.get('augmented_samples', model_status.get('raw_samples'))} samples "
-                f"(CV MAE: {model_status.get('mae_cv')}, confidence: {prediction.get('confidence', 'n/a')})"
+                        "is_bug": analysis.is_bug_related,
+                    },
+                }
             )
-        else:
-            factors.append("ML risk model unavailable; fallback heuristic scoring is active")
-        
-        # Build NLP-informed description
-        sentiment_positive = sum(1 for s in signals if s.get("nlp", {}).get("sentiment") == "positive")
-        sentiment_negative = sum(1 for s in signals if s.get("nlp", {}).get("sentiment") == "negative")
-        
-        description = f"NLP Analysis of {repo.full_name}: "
-        if sentiment_negative > sentiment_positive:
-            description += "Development signals show predominantly negative sentiment, indicating potential issues in progress. "
-        elif sentiment_positive > sentiment_negative:
-            description += "Development signals show positive progress momentum. "
-        else:
-            description += "Development signals are balanced. "
-        
-        description += " ".join(factors[:3])
-        
-        # Generate recommendation based on all factors (merge conflicts top priority)
-        recommendation = ""
-        
-        if conflict_data and conflict_data.get("prs_with_conflicts", 0) > 0:
-            if conflict_data["conflict_severity"] in ["critical", "high"]:
-                recommendation = f"🚨 URGENT ACTION REQUIRED: {conflict_data['prs_with_conflicts']} pull request(s) blocked by merge conflicts. "
-                if conflict_data.get("resolution_difficulty") in ["difficult", "complex"]:
-                    recommendation += "Conflicts are complex - recommend pair programming or expert code review. "
-                recommendation += "Establish clear merge strategies, improve branch protection rules, and modernize CI/CD pipeline. "
-            else:
-                recommendation = f"Address merge conflicts in {conflict_data['prs_with_conflicts']} pull request(s). "
-        
-        recommendation += "Recommendations: "
-        
-        if len(bug_signals) > 2:
-            recommendation += "Prioritize bug fixes and quality assurance testing. "
-        if risk_score > 70 and not recommendation.startswith("🚨"):
-            recommendation += "Conduct thorough code review and increase test coverage. "
-        if issues > 20:
-            recommendation += "Create issue triage process and assign priority labels. "
-        if sentiment_negative > sentiment_positive:
-            recommendation += "Investigate root causes of negative development signals. "
-        if not recommendation.endswith(". "):
-            recommendation += "Review recent commits and ensure proper documentation of changes."
-        
+
+        return signals
+
+    def _status_from_nlp(self, risk_level: str, sentiment_score: float, has_urgency: bool) -> str:
+        if risk_level in {"critical", "high"} or has_urgency:
+            return "Urgent"
+        if sentiment_score < -0.25:
+            return "Negative"
+        return "Neutral"
+
+    def _temporal_trends(self, commits: List[Any]) -> List[Dict[str, Any]]:
+        now = datetime.utcnow()
+        buckets: List[Dict[str, Any]] = []
+
+        for day in range(6, -1, -1):
+            start = now - timedelta(days=day)
+            start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = start + timedelta(days=1)
+
+            daily_commits = [c for c in commits if start <= c.commit.author.date.replace(tzinfo=None) < end]
+            bug_messages = [c for c in daily_commits if "fix" in c.commit.message.lower() or "bug" in c.commit.message.lower()]
+            bug_growth = max(0, min(100, len(daily_commits) * 8 + len(bug_messages) * 6))
+            irregularity = max(5, min(100, len(daily_commits) * 4))
+
+            buckets.append(
+                {
+                    "timestamp": "Today" if day == 0 else f"{day}d ago",
+                    "bugGrowth": bug_growth,
+                    "devIrregularity": irregularity,
+                }
+            )
+
+        return buckets
+
+    def _nlp_signal_score(self, signals: List[Dict[str, Any]]) -> Tuple[float, Dict[str, Any]]:
+        if not signals:
+            return 15.0, {
+                "bug_signals": 0,
+                "urgent_signals": 0,
+                "high_risk_signals": 0,
+                "positive_sentiment": 0,
+                "negative_sentiment": 0,
+                "top_keywords": [],
+            }
+
+        bug = sum(1 for s in signals if s.get("nlp", {}).get("is_bug"))
+        urgent = sum(1 for s in signals if s.get("status") == "Urgent")
+        high = sum(1 for s in signals if s.get("nlp", {}).get("risk_level") in {"high", "critical"})
+        pos = sum(1 for s in signals if s.get("nlp", {}).get("sentiment") == "positive")
+        neg = sum(1 for s in signals if s.get("nlp", {}).get("sentiment") == "negative")
+
+        keywords: List[str] = []
+        for signal in signals:
+            keywords.extend(signal.get("nlp", {}).get("keywords", []))
+
+        total = max(len(signals), 1)
+        score = (
+            (bug / total) * 38
+            + (urgent / total) * 28
+            + (high / total) * 24
+            + (neg / total) * 15
+            - (pos / total) * 10
+        )
+        score = float(max(0.0, min(100.0, 18.0 + score)))
+
+        return score, {
+            "bug_signals": bug,
+            "urgent_signals": urgent,
+            "high_risk_signals": high,
+            "positive_sentiment": pos,
+            "negative_sentiment": neg,
+            "top_keywords": list(dict.fromkeys(keywords))[:6],
+        }
+
+    def _engineer_features(
+        self,
+        commits_30d: int,
+        contributors_30d: int,
+        open_issues: int,
+        closed_issues_30d: int,
+        open_prs: int,
+        signals: List[Dict[str, Any]],
+        prs_sample: List[Any],
+    ) -> Dict[str, float]:
+        total_signals = max(len(signals), 1)
+        bug_fix_ratio = sum(1 for s in signals if s.get("nlp", {}).get("is_bug")) / total_signals
+        urgent_signal_ratio = sum(1 for s in signals if s.get("status") == "Urgent") / total_signals
+        negative_sentiment_ratio = sum(
+            1 for s in signals if s.get("nlp", {}).get("sentiment") == "negative"
+        ) / total_signals
+
+        avg_commit_frequency = commits_30d / 30.0
+        code_churn_rate = min(1.0, (open_prs * 4 + commits_30d) / max(260, commits_30d * 7))
+        mean_pr_cycle_time_hours = self._avg_pr_cycle_time(prs_sample)
+
+        # These are inferred metrics when no CI/coverage feed is connected yet.
+        test_coverage = max(15.0, min(95.0, 82.0 - (open_issues / max(commits_30d + 1, 1)) * 6.5))
+        ci_failures_rate = max(0.02, min(0.8, urgent_signal_ratio * 0.55 + negative_sentiment_ratio * 0.3))
+        release_stability_index = max(0.0, min(1.0, 1 - (urgent_signal_ratio * 0.5 + ci_failures_rate * 0.45)))
+
+        issue_to_commit_ratio = open_issues / max(commits_30d, 1)
+        bus_factor_inverse = 1 / max(1.0, contributors_30d**0.5)
+        developer_load_index = (open_issues + open_prs) / max(contributors_30d, 1)
+        commit_volatility = min(1.0, abs(0.5 - avg_commit_frequency / 10.0) + code_churn_rate * 0.35)
+
+        return {
+            "commits_30d": float(commits_30d),
+            "contributors_30d": float(contributors_30d),
+            "open_issues": float(open_issues),
+            "closed_issues_30d": float(closed_issues_30d),
+            "open_prs": float(open_prs),
+            "avg_commit_frequency": float(avg_commit_frequency),
+            "code_churn_rate": float(code_churn_rate),
+            "bug_fix_ratio": float(bug_fix_ratio),
+            "urgent_signal_ratio": float(urgent_signal_ratio),
+            "negative_sentiment_ratio": float(negative_sentiment_ratio),
+            "test_coverage": float(test_coverage),
+            "ci_failures_rate": float(ci_failures_rate),
+            "mean_pr_cycle_time_hours": float(mean_pr_cycle_time_hours),
+            "release_stability_index": float(release_stability_index),
+            "issue_to_commit_ratio": float(issue_to_commit_ratio),
+            "bus_factor_inverse": float(bus_factor_inverse),
+            "developer_load_index": float(developer_load_index),
+            "commit_volatility": float(commit_volatility),
+        }
+
+    def _avg_pr_cycle_time(self, prs_sample: List[Any]) -> float:
+        if not prs_sample:
+            return 16.0
+
+        elapsed_hours: List[float] = []
+        now = datetime.utcnow()
+        for pr in prs_sample[:15]:
+            created_at = pr.created_at.replace(tzinfo=None)
+            updated_at = (pr.updated_at or now).replace(tzinfo=None)
+            cycle = max((updated_at - created_at).total_seconds() / 3600.0, 1.0)
+            elapsed_hours.append(cycle)
+
+        if not elapsed_hours:
+            return 16.0
+        return sum(elapsed_hours) / len(elapsed_hours)
+
+    def _build_ai_insight(
+        self,
+        repo_name: str,
+        risk_score: int,
+        features: Dict[str, float],
+        nlp_insights: Dict[str, Any],
+        prediction_factors: Dict[str, float],
+    ) -> Dict[str, Any]:
+        severity = "high" if risk_score >= 70 else "medium" if risk_score >= 45 else "low"
+        title = f"{repo_name} reliability risk is {severity}"
+
+        description = (
+            f"Risk {risk_score}/100 is derived from a trained stacking ensemble and NLP signal analysis. "
+            f"Issue pressure ratio is {features['issue_to_commit_ratio']:.2f}, "
+            f"CI failure rate estimate is {features['ci_failures_rate']:.2f}, "
+            f"and urgent signal ratio is {features['urgent_signal_ratio']:.2f}."
+        )
+
+        factors = [
+            f"Urgent signal ratio: {features['urgent_signal_ratio']:.2f}",
+            f"Issue/commit pressure: {features['issue_to_commit_ratio']:.2f}",
+            f"Estimated CI failures: {features['ci_failures_rate']:.2f}",
+            f"Model dominant factor: {max(prediction_factors, key=prediction_factors.get)}",
+        ]
+
+        recommendation = (
+            "Stabilize release flow by triaging open issues, reducing PR cycle time, "
+            "and prioritizing tests for modules with repeated urgent/negative signals."
+        )
+
         return {
             "title": title,
             "description": description,
-            "factors": factors if factors else ["Repository analyzed successfully"],
+            "factors": factors,
             "recommendation": recommendation,
-            "nlp_insights": {
-                "bug_signals": len(bug_signals),
-                "urgent_signals": len(urgent_signals),
-                "high_risk_signals": len(high_risk_signals),
-                "positive_sentiment": sentiment_positive,
-                "negative_sentiment": sentiment_negative,
-                "top_keywords": list(set(all_keywords))[:5]
-            },
-            "conflict_insights": {
-                "total_prs_checked": conflict_data.get("total_prs_checked", 0),
-                "prs_with_conflicts": conflict_data.get("prs_with_conflicts", 0),
-                "conflict_severity": conflict_data.get("conflict_severity", "none"),
-                "resolution_difficulty": conflict_data.get("resolution_difficulty", "easy"),
-                "conflict_rate": conflict_data.get("metrics", {}).get("merge_conflict_rate", 0)
-            } if conflict_data else None
+            "nlp_insights": nlp_insights,
         }
-    
-    def _mock_analysis(self, repo_url: str) -> Dict:
-        """Return mock data if GitHub API not available"""
+
+    def _health_from_score(self, risk_score: int) -> str:
+        if risk_score >= 80:
+            return "Critical"
+        if risk_score >= 55:
+            return "Warning"
+        return "Nominal"
+
+    def _fallback_analysis(self, repo_name: str, reason: str) -> Dict[str, Any]:
+        predictor = get_risk_predictor()
+        features = {
+            "commits_30d": 18.0,
+            "contributors_30d": 4.0,
+            "open_issues": 23.0,
+            "closed_issues_30d": 15.0,
+            "open_prs": 6.0,
+            "avg_commit_frequency": 0.6,
+            "code_churn_rate": 0.34,
+            "bug_fix_ratio": 0.35,
+            "urgent_signal_ratio": 0.28,
+            "negative_sentiment_ratio": 0.22,
+            "test_coverage": 71.0,
+            "ci_failures_rate": 0.14,
+            "mean_pr_cycle_time_hours": 21.0,
+            "release_stability_index": 0.62,
+            "issue_to_commit_ratio": 1.28,
+            "bus_factor_inverse": 0.5,
+            "developer_load_index": 7.25,
+            "commit_volatility": 0.44,
+        }
+        prediction = predictor.predict(features, nlp_signal_score=49.0, blend_alpha=0.82)
+        risk_score = int(round(prediction.predicted_risk_score))
+
+        mock_signals = [
+            {
+                "id": "fallback-1",
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "message": "Fallback mode active: API rate limit or GitHub client unavailable",
+                "status": "Negative",
+                "source": "alert",
+                "nlp": {
+                    "intent": "chore",
+                    "sentiment": "negative",
+                    "risk_level": "medium",
+                    "keywords": ["fallback", "github", "risk"],
+                    "has_urgency": False,
+                    "is_bug": False,
+                },
+            }
+        ]
+
         return {
-            "error": "PyGithub not installed",
-            "message": "Install with: pip install PyGithub",
-            "suggestion": f"Would analyze: {repo_url}",
-            "fallback": True
+            "metrics": {
+                "failureRiskScore": risk_score,
+                "lastUpdated": datetime.utcnow().isoformat() + "Z",
+                "systemHealth": self._health_from_score(risk_score),
+                "metadata": {
+                    "commits_30d": int(features["commits_30d"]),
+                    "contributors_30d": int(features["contributors_30d"]),
+                    "open_issues": int(features["open_issues"]),
+                    "closed_issues_30d": int(features["closed_issues_30d"]),
+                    "open_prs": int(features["open_prs"]),
+                    "model_name": prediction.model_name,
+                    "model_version": prediction.model_version,
+                    "ml_prediction": prediction.ml_risk_score,
+                    "nlp_signal_score": prediction.nlp_signal_score,
+                    "blended_score": prediction.blended_risk_score,
+                    "confidence": prediction.confidence,
+                    "uncertainty": prediction.uncertainty,
+                    "contributing_factors": prediction.contributing_factors,
+                },
+            },
+            "signals": mock_signals,
+            "temporalData": [
+                {"timestamp": "6d ago", "bugGrowth": 21, "devIrregularity": 18},
+                {"timestamp": "5d ago", "bugGrowth": 27, "devIrregularity": 23},
+                {"timestamp": "4d ago", "bugGrowth": 32, "devIrregularity": 28},
+                {"timestamp": "3d ago", "bugGrowth": 35, "devIrregularity": 31},
+                {"timestamp": "2d ago", "bugGrowth": 40, "devIrregularity": 34},
+                {"timestamp": "1d ago", "bugGrowth": 42, "devIrregularity": 38},
+                {"timestamp": "Today", "bugGrowth": 46, "devIrregularity": 39},
+            ],
+            "aiInsights": {
+                "title": f"Fallback analysis for {repo_name}",
+                "description": f"Used fallback profile because {reason}.",
+                "factors": [
+                    "Synthetic repository profile used",
+                    "Trained ML model still used for risk scoring",
+                    "NLP signal blended into final score",
+                ],
+                "recommendation": "Provide valid GitHub access/token for live repository telemetry.",
+                "nlp_insights": {
+                    "bug_signals": 0,
+                    "urgent_signals": 0,
+                    "high_risk_signals": 0,
+                    "positive_sentiment": 0,
+                    "negative_sentiment": 1,
+                    "top_keywords": ["fallback", "telemetry"],
+                },
+            },
+            "riskBreakdown": {
+                "risk_score": risk_score,
+                "confidence": prediction.confidence,
+                "uncertainty": prediction.uncertainty,
+                "ml_risk_score": prediction.ml_risk_score,
+                "nlp_signal_score": prediction.nlp_signal_score,
+                "blended_risk_score": prediction.blended_risk_score,
+                "reasoning_factors": prediction.contributing_factors,
+            },
+            "fallback": True,
+            "warning": reason,
         }
 
 
-def get_analyzer(github_token: str = None) -> GitHubAnalyzer:
-    """Get GitHub analyzer instance"""
+def get_analyzer(github_token: str | None = None) -> GitHubAnalyzer:
     return GitHubAnalyzer(github_token)

@@ -1,16 +1,12 @@
 name: CI
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
-
-permissions:
-  contents: read
+  pull_request:
 
 jobs:
-  frontend-quality:
+  frontend:
     name: Frontend Lint and Build
     runs-on: ubuntu-latest
 
@@ -33,7 +29,7 @@ jobs:
       - name: Build
         run: npm run build
 
-  backend-syntax:
+  backend:
     name: Backend Syntax Validation
     runs-on: ubuntu-latest
 
@@ -44,14 +40,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.11'
 
       - name: Validate Python syntax
-        run: |
-          python -m py_compile \
-            backend/main.py \
-            backend/github_analyzer.py \
-            backend/ml_risk_model.py
-
-      - name: Byte-compile backend package
         run: python -m compileall -q backend

@@ -8,6 +8,8 @@ interface RiskScoreHeroProps {
     commits_30d?: number;
     contributors_30d?: number;
     open_issues?: number;
+    confidence?: number;
+    uncertainty?: number;
   };
 }
 
@@ -107,8 +109,20 @@ export const RiskScoreHero = ({ riskScore, systemHealth, metadata }: RiskScoreHe
               icon={<Zap size={15} />} color="#a855f7" delay={0.2} />
             <MetricCard label="Open Issues" value={metadata?.open_issues?.toString() || '--'}
               icon={<AlertCircle size={15} />} color="#ff8c42" delay={0.3} />
-            <MetricCard label="Last Update" value="Now"
-              icon={<Clock size={15} />} color="#22c55e" delay={0.4} />
+            <MetricCard
+              label="ML Confidence"
+              value={metadata?.confidence !== undefined ? `${Math.round(metadata.confidence * 100)}%` : '--'}
+              icon={<Clock size={15} />}
+              color="#22c55e"
+              delay={0.4}
+            />
+            <MetricCard
+              label="ML Uncertainty"
+              value={metadata?.uncertainty !== undefined ? `${Math.round(metadata.uncertainty * 100)}%` : '--'}
+              icon={<Clock size={15} />}
+              color="#f59e0b"
+              delay={0.5}
+            />
           </div>
         </div>
       </div>
