@@ -85,9 +85,11 @@ print("✓ Collections created successfully");
 
 // Create admin user (already created by MONGO_INITDB_ROOT_USERNAME)
 // Create application user with specific permissions
+// Password should be provided via MONGO_APP_PASSWORD environment variable
+const appPassword = process.env.MONGO_APP_PASSWORD || "change_me_in_production";
 db.createUser({
   user: "sentinel_app",
-  pwd: "app_password_change_me",
+  pwd: appPassword,
   roles: [
     {
       role: "readWrite",

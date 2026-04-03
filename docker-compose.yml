@@ -9,8 +9,8 @@ services:
     ports:
       - "27017:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: mongodb_secure_password_change_me
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
       MONGO_INITDB_DATABASE: sentinel_net
     volumes:
       - mongodb_data:/data/db
@@ -34,9 +34,9 @@ services:
     ports:
       - "8081:8081"
     environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
-      ME_CONFIG_MONGODB_ADMINPASSWORD: mongodb_secure_password_change_me
-      ME_CONFIG_MONGODB_URL: mongodb://admin:mongodb_secure_password_change_me@mongodb:27017/
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME:-admin}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/
       ME_CONFIG_BASICAUTH: false
     depends_on:
       mongodb:
@@ -56,7 +56,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      MONGODB_URL: mongodb://admin:mongodb_secure_password_change_me@mongodb:27017/?authSource=admin
+      MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME:-admin}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/?authSource=admin
       MONGODB_DATABASE: sentinel_net
       MONGODB_MAX_POOL_SIZE: 50
       MONGODB_MIN_POOL_SIZE: 10
