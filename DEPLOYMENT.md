@@ -149,7 +149,16 @@ BACKEND_HOST=0.0.0.0
 BACKEND_PORT=8000
 ENVIRONMENT=production
 
-# Database (required for production)
+# MongoDB (Primary Database - NEW)
+MONGODB_URL=mongodb+srv://user:password@cluster.mongodb.net/?retryWrites=true&w=majority
+MONGODB_DATABASE=sentinel_net_prod
+MONGODB_MAX_POOL_SIZE=50
+MONGODB_MIN_POOL_SIZE=10
+MONGODB_ENABLE_TRANSACTIONS=true
+MONGODB_USERNAME=admin
+MONGODB_PASSWORD=your_secure_password
+
+# Legacy Database (Optional - PostgreSQL)
 DATABASE_URL=postgresql://user:password@host:5432/sentinel_net
 REDIS_URL=redis://host:6379/0
 
@@ -283,7 +292,29 @@ EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 ```
 
-### Docker Compose
+### Docker Compose (Updated with MongoDB Support)
+
+#### Quick Start (New - MongoDB Stack)
+```bash
+# The project now includes a complete MongoDB stack
+# See docker-compose.yml for MongoDB + MongoDB Express + FastAPI
+
+# Start the full MongoDB stack
+docker-compose up -d
+
+# Services will be available at:
+# - API: http://localhost:8000/docs
+# - MongoDB Admin: http://localhost:8081
+# - MongoDB: localhost:27017
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
+#### Manual Docker Compose (Legacy - PostgreSQL Stack)
 ```yaml
 version: '3.8'
 
@@ -296,12 +327,11 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://postgres:password@db:5432/sentinel_net
-      REDIS_URL: redis://redis:6379/0
+      MONGODB_URL: mongodb://mongodb:27017
+      MONGODB_DATABASE: sentinel_net
       ENVIRONMENT: production
     depends_on:
-      - db
-      - redis
+      - mongodb
     volumes:
       - ./backend:/app
     restart: unless-stopped
@@ -321,34 +351,45 @@ services:
       - api
     restart: unless-stopped
 
-  # PostgreSQL Database
-  db:
-    image: postgres:15-alpine
+  # MongoDB Database (NEW)
+  mongodb:
+    image: mongo:7.0
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: sentinel_net
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: sentinel_net
     volumes:
-      - db_data:/var/lib/postgresql/data
-    restart: unless-stopped
-
-  # Redis Cache
-  redis:
-    image: redis:7-alpine
+      - mongodb_data:/data/db
     ports:
-      - "6379:6379"
+      - "27017:27017"
+    restart: unless-stopped
+    command: --replSet rs0
+
+  # MongoDB Express (Admin UI - Optional)
+  mongo-express:
+    image: mongo-express:latest
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: password
+      ME_CONFIG_MONGODB_URL: mongodb://admin:password@mongodb:27017/
+    depends_on:
+      - mongodb
     restart: unless-stopped
 
 volumes:
-  db_data:
+  mongodb_data:
 ```
 
 ### Deploy with Docker
 ```bash
-# Build images
-docker-compose build
+# Option 1: Use existing docker-compose.yml (Recommended)
+docker-compose up -d
 
-# Start services
+# Option 2: Build custom images
+docker-compose build
+docker-compose up -d
 docker-compose up -d
 
 # Check status
@@ -366,7 +407,82 @@ docker-compose down
 
 ## Database Setup
 
-### PostgreSQL Setup (Recommended)
+### MongoDB Setup (NEW - Advanced Features)
+
+#### Quick Start with Docker (Recommended)
+```bash
+# Start MongoDB stack with one command
+docker-compose up -d
+
+# Verify services
+curl http://localhost:8000/api/db/health
+
+# Access points
+# - MongoDB: localhost:27017
+# - Admin UI: http://localhost:8081
+# - FastAPI: http://localhost:8000/docs
+```
+
+#### Installation (Local)
+```bash
+# macOS
+brew install mongodb-community
+
+# Ubuntu
+sudo apt-get install mongodb
+
+# Windows
+# Download from https://www.mongodb.com/try/download/community
+
+# Start service
+# macOS: brew services start mongodb-community
+# Linux: sudo systemctl start mongodb
+# Windows: MongoDB service (installed via .msi)
+```
+
+#### Initialize Database
+```bash
+cd backend
+
+# Copy environment template
+cp .env.example .env
+
+# Edit .env with MongoDB connection (if using local/Atlas)
+# MONGODB_URL=mongodb://localhost:27017
+# MONGODB_DATABASE=sentinel_net
+
+# Initialize indexes and collections
+python db_migrate.py setup
+
+# Verify connection
+curl http://localhost:8000/api/db/health
+```
+
+#### MongoDB Configuration for Production
+```bash
+# .env (production)
+MONGODB_URL=mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority
+MONGODB_DATABASE=sentinel_net_prod
+MONGODB_MAX_POOL_SIZE=50
+MONGODB_MIN_POOL_SIZE=10
+MONGODB_ENABLE_TRANSACTIONS=true
+MONGODB_REPLICA_SET=rs0
+```
+
+#### Available API Endpoints
+See **MONGODB_QUICKSTART.md** for complete endpoint reference.
+
+**Key Endpoints:**
+- `POST /api/db/risk-assessment/save` - Save risk scores
+- `GET /api/db/risk-assessment/history` - Get history
+- `GET /api/db/dashboard/summary` - Get aggregated summary
+- `GET /api/db/signals` - Get signals with filters
+- `GET /api/db/signals/search` - Full-text search
+- `GET /api/db/health` - Health check
+
+---
+
+### PostgreSQL Setup (Legacy - Optional)
 
 #### Installation
 ```bash
@@ -395,7 +511,6 @@ CREATE USER sentinel_user WITH PASSWORD 'your_password';
 ALTER ROLE sentinel_user SET client_encoding TO 'utf8';
 ALTER ROLE sentinel_user SET default_transaction_isolation TO 'read committed';
 ALTER ROLE sentinel_user SET default_transaction_deferrable TO on;
-ALTER ROLE sentinel_user SET default_transaction_isolation TO 'read committed';
 GRANT ALL PRIVILEGES ON DATABASE sentinel_net TO sentinel_user;
 ```
 
@@ -403,6 +518,8 @@ GRANT ALL PRIVILEGES ON DATABASE sentinel_net TO sentinel_user;
 ```bash
 DATABASE_URL=postgresql://sentinel_user:your_password@localhost:5432/sentinel_net
 ```
+
+---
 
 ### Redis Setup (Caching)
 
@@ -658,6 +775,25 @@ Or shard by time:
 
 ## Troubleshooting Deployment
 
+### MongoDB Connection Issues (NEW)
+```bash
+# Check if MongoDB is running
+docker-compose ps
+
+# Test MongoDB connection
+curl http://localhost:8000/api/db/health
+
+# View MongoDB logs
+docker-compose logs mongodb
+
+# Connect to MongoDB shell
+docker-compose exec mongodb mongosh
+
+# Re-initialize database
+cd backend
+python db_migrate.py setup
+```
+
 ### Port 8000 Already in Use
 ```bash
 # macOS/Linux
@@ -681,12 +817,11 @@ curl -i -N -H "Connection: Upgrade" \
 
 ### Database Connection Timeout
 ```bash
-# Verify connection string
-psql postgresql://user:pass@host:5432/db
+# Verify MongoDB connection
+mongosh --eval "db.adminCommand('ping')"
 
 # Check network
-ping host
-telnet host 5432
+ping mongodb_host
 ```
 
 ### Memory Leak in ML Models
@@ -704,12 +839,24 @@ docker-compose restart api
 
 ---
 
+## MongoDB Deployment Resources
+
+See comprehensive guides for MongoDB deployment:
+
+- **[MONGODB_QUICKSTART.md](MONGODB_QUICKSTART.md)** - 5-minute setup
+- **[MONGODB_SETUP.md](MONGODB_SETUP.md)** - Complete configuration guide
+- **[MONGODB_QUICKREF.md](MONGODB_QUICKREF.md)** - Commands and operations
+- **[MONGODB_ARCHITECTURE.md](MONGODB_ARCHITECTURE.md)** - System design
+- **[MONGODB_IMPLEMENTATION.md](MONGODB_IMPLEMENTATION.md)** - Technical details
+
+---
+
 ## Next Steps
 
 1. ✅ Install locally (development)
 2. ✅ Configure environment
-3. ✅ Test all endpoints
-4. ✅ Set up database
+3. ✅ Setup MongoDB (NEW)
+4. ✅ Test all endpoints
 5. ✅ Deploy to staging
 6. ✅ Run performance tests
 7. ✅ Configure monitoring
@@ -717,4 +864,4 @@ docker-compose restart api
 
 ---
 
-**Last Updated**: March 3, 2026 | **Version**: 3.0.0
+**Last Updated**: April 4, 2026 | **Version**: 4.0.0 (with MongoDB)
