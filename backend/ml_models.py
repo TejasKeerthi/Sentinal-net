@@ -32,7 +32,7 @@ DATA_DIR = CURRENT_DIR / "data"
 MODEL_ARTIFACT = ARTIFACT_DIR / "risk_model.pkl"
 STATUS_ARTIFACT = ARTIFACT_DIR / "training_status.json"
 DATASET_ARTIFACT = DATA_DIR / "repository_risk_training.csv"
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "2.0.0"
 
 
 @dataclass
@@ -62,13 +62,13 @@ class RiskPrediction:
 
 
 class RiskScorePredictorML:
-    """Stacking ensemble regressor for repository reliability risk."""
+    """Niche dual-head fusion model for repository reliability risk."""
 
     def __init__(self) -> None:
         ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-        self.feature_columns: List[str] = [
+        self.default_feature_columns: List[str] = [
             "commits_30d",
             "contributors_30d",
             "open_issues",
@@ -87,11 +87,21 @@ class RiskScorePredictorML:
             "bus_factor_inverse",
             "developer_load_index",
             "commit_volatility",
+            "issue_momentum",
+            "signal_entropy",
+            "release_friction_index",
+            "socio_technical_strain",
+            "remediation_latency",
+            "collaboration_imbalance",
         ]
+        self.feature_columns: List[str] = list(self.default_feature_columns)
+        # Keep self.pipeline for compatibility with older code paths.
         self.pipeline: Pipeline | None = None
+        self.primary_pipeline: Pipeline | None = None
+        self.stress_pipeline: Pipeline | None = None
         self.status = TrainingStatus(
             trained=False,
-            model_name="StackingRegressor",
+            model_name="DualHeadAdaptiveRiskFusion",
             model_version=MODEL_VERSION,
             sample_count=0,
             feature_count=len(self.feature_columns),
@@ -103,6 +113,7 @@ class RiskScorePredictorML:
         self._load_or_train()
 
     def _load_or_train(self) -> None:
+        needs_train = True
         if MODEL_ARTIFACT.exists() and STATUS_ARTIFACT.exists():
             try:
                 with MODEL_ARTIFACT.open("rb") as f:
@@ -110,13 +121,54 @@ class RiskScorePredictorML:
                 with STATUS_ARTIFACT.open("r", encoding="utf-8") as f:
                     status_data = json.load(f)
 
-                self.pipeline = payload["pipeline"]
-                self.feature_columns = payload["feature_columns"]
+                self.primary_pipeline = payload.get("primary_pipeline") or payload.get("pipeline")
+                self.stress_pipeline = payload.get("stress_pipeline")
+                self.pipeline = self.primary_pipeline
+                self.feature_columns = payload.get("feature_columns", self.feature_columns)
                 self.status = TrainingStatus(**status_data)
-                return
+
+                needs_train = (
+                    self.status.model_version != MODEL_VERSION
+                    or self.status.feature_count != len(self.feature_columns)
+                    or self.primary_pipeline is None
+                    or self.stress_pipeline is None
+                )
             except Exception:
                 # If artifact is corrupt or stale, retrain.
-                pass
+                needs_train = True
+
+        if needs_train:
+            self.feature_columns = list(self.default_feature_columns)
+            self.train_model()
+    @staticmethod
+    def _derive_specialty_features(row: Dict[str, float]) -> Dict[str, float]:
+        issue_momentum = (row["open_issues"] - row["closed_issues_30d"]) / max(
+            row["open_issues"] + row["closed_issues_30d"],
+            1.0,
+        )
+
+        urgent = float(np.clip(row["urgent_signal_ratio"], 0.0001, 0.9999))
+        negative = float(np.clip(row["negative_sentiment_ratio"], 0.0001, 0.9999))
+        urgent_entropy = -(urgent * math.log(urgent) + (1 - urgent) * math.log(1 - urgent)) / math.log(2)
+        negative_entropy = -(negative * math.log(negative) + (1 - negative) * math.log(1 - negative)) / math.log(2)
+        signal_entropy = float(np.clip((urgent_entropy + negative_entropy) / 2.0, 0.0, 1.0))
+
+        release_friction_index = (
+            row["ci_failures_rate"] * (row["mean_pr_cycle_time_hours"] / 36.0) * (1.0 + (1.0 - row["release_stability_index"]))
+        )
+        socio_technical_strain = row["developer_load_index"] * (1 + row["negative_sentiment_ratio"]) * row["bus_factor_inverse"]
+        remediation_latency = (1 - row["bug_fix_ratio"]) * row["issue_to_commit_ratio"] * 10.0
+        collaboration_imbalance = row["commit_volatility"] * row["bus_factor_inverse"] * (1 + row["urgent_signal_ratio"])
+
+        return {
+            "issue_momentum": float(np.clip(issue_momentum, -1.0, 1.0)),
+            "signal_entropy": signal_entropy,
+            "release_friction_index": float(np.clip(release_friction_index, 0.0, 8.0)),
+            "socio_technical_strain": float(np.clip(socio_technical_strain, 0.0, 300.0)),
+            "remediation_latency": float(np.clip(remediation_latency, 0.0, 300.0)),
+            "collaboration_imbalance": float(np.clip(collaboration_imbalance, 0.0, 2.0)),
+        }
+
 
         self.train_model()
 
@@ -147,7 +199,32 @@ class RiskScorePredictorML:
         developer_load_index = (open_issues + open_prs) / np.maximum(contributors_30d, 1)
         commit_volatility = np.clip(rng.beta(2.5, 4.8, sample_count), 0.0, 1.0)
 
-        # Synthetic target that encodes nonlinear effects + interactions.
+        specialty = []
+        for i in range(sample_count):
+            base = {
+                "open_issues": float(open_issues[i]),
+                "closed_issues_30d": float(closed_issues_30d[i]),
+                "urgent_signal_ratio": float(urgent_signal_ratio[i]),
+                "negative_sentiment_ratio": float(negative_sentiment_ratio[i]),
+                "ci_failures_rate": float(ci_failures_rate[i]),
+                "mean_pr_cycle_time_hours": float(mean_pr_cycle_time_hours[i]),
+                "release_stability_index": float(release_stability_index[i]),
+                "developer_load_index": float(developer_load_index[i]),
+                "bus_factor_inverse": float(bus_factor_inverse[i]),
+                "bug_fix_ratio": float(bug_fix_ratio[i]),
+                "issue_to_commit_ratio": float(issue_to_commit_ratio[i]),
+                "commit_volatility": float(commit_volatility[i]),
+            }
+            specialty.append(self._derive_specialty_features(base))
+
+        issue_momentum = np.array([x["issue_momentum"] for x in specialty])
+        signal_entropy = np.array([x["signal_entropy"] for x in specialty])
+        release_friction_index = np.array([x["release_friction_index"] for x in specialty])
+        socio_technical_strain = np.array([x["socio_technical_strain"] for x in specialty])
+        remediation_latency = np.array([x["remediation_latency"] for x in specialty])
+        collaboration_imbalance = np.array([x["collaboration_imbalance"] for x in specialty])
+
+        # Synthetic target that encodes nonlinear effects + niche reliability signatures.
         raw_target = (
             10
             + 9.5 * np.log1p(issue_to_commit_ratio)
@@ -160,6 +237,12 @@ class RiskScorePredictorML:
             + 7.0 * commit_volatility
             + 5.3 * bus_factor_inverse
             + 0.035 * mean_pr_cycle_time_hours
+            + 2.8 * signal_entropy
+            + 1.2 * release_friction_index
+            + 0.04 * socio_technical_strain
+            + 0.06 * remediation_latency
+            + 9.0 * collaboration_imbalance
+            + np.where(issue_momentum > 0.35, 7.5, 0.0)
             - 0.26 * test_coverage
             - 11.5 * release_stability_index
             + np.where(commits_30d == 0, 15.0, 0.0)
@@ -189,6 +272,12 @@ class RiskScorePredictorML:
                 "bus_factor_inverse": bus_factor_inverse,
                 "developer_load_index": developer_load_index,
                 "commit_volatility": commit_volatility,
+                "issue_momentum": issue_momentum,
+                "signal_entropy": signal_entropy,
+                "release_friction_index": release_friction_index,
+                "socio_technical_strain": socio_technical_strain,
+                "remediation_latency": remediation_latency,
+                "collaboration_imbalance": collaboration_imbalance,
                 "target_risk": risk_score,
             }
         )
@@ -247,15 +336,59 @@ class RiskScorePredictorML:
             n_jobs=-1,
         )
 
-        self.pipeline = Pipeline(
+        self.primary_pipeline = Pipeline(
             [
                 ("scaler", StandardScaler()),
                 ("model", model),
             ]
         )
-        self.pipeline.fit(x_train, y_train)
+        self.primary_pipeline.fit(x_train, y_train)
 
-        y_pred = self.pipeline.predict(x_test)
+        stress_columns = [
+            "issue_momentum",
+            "signal_entropy",
+            "release_friction_index",
+            "socio_technical_strain",
+            "remediation_latency",
+            "collaboration_imbalance",
+            "urgent_signal_ratio",
+            "negative_sentiment_ratio",
+            "issue_to_commit_ratio",
+            "developer_load_index",
+            "ci_failures_rate",
+            "mean_pr_cycle_time_hours",
+        ]
+
+        self.stress_pipeline = Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                (
+                    "model",
+                    GradientBoostingRegressor(
+                        n_estimators=280,
+                        learning_rate=0.045,
+                        max_depth=3,
+                        random_state=42,
+                    ),
+                ),
+            ]
+        )
+        self.stress_pipeline.fit(x_train[stress_columns], y_train)
+
+        self.pipeline = self.primary_pipeline
+
+        y_backbone = self.primary_pipeline.predict(x_test)
+        y_stress = self.stress_pipeline.predict(x_test[stress_columns])
+        gate = np.clip(
+            0.25
+            + (0.32 * (x_test["signal_entropy"] / np.maximum(x_test["signal_entropy"].max(), 1e-4)))
+            + (0.28 * np.tanh(x_test["release_friction_index"] / 2.5))
+            + (0.15 * np.tanh(x_test["socio_technical_strain"] / 20.0)),
+            0.2,
+            0.85,
+        )
+
+        y_pred = ((1 - gate) * y_backbone) + (gate * y_stress)
         rmse = float(math.sqrt(mean_squared_error(y_test, y_pred)))
         mae = float(mean_absolute_error(y_test, y_pred))
         r2 = float(r2_score(y_test, y_pred))
@@ -268,7 +401,7 @@ class RiskScorePredictorML:
 
         self.status = TrainingStatus(
             trained=True,
-            model_name="StackingRegressor(RandomForest, GradientBoosting, ExtraTrees -> Ridge)",
+            model_name="Dual-Head Adaptive Risk Fusion (Stacking + StressRegressor)",
             model_version=MODEL_VERSION,
             sample_count=int(dataset.shape[0]),
             feature_count=len(self.feature_columns),
@@ -280,7 +413,8 @@ class RiskScorePredictorML:
         with MODEL_ARTIFACT.open("wb") as f:
             pickle.dump(
                 {
-                    "pipeline": self.pipeline,
+                    "primary_pipeline": self.primary_pipeline,
+                    "stress_pipeline": self.stress_pipeline,
                     "feature_columns": self.feature_columns,
                 },
                 f,
@@ -295,7 +429,27 @@ class RiskScorePredictorML:
         return asdict(self.status)
 
     def _to_feature_vector(self, feature_payload: Dict[str, float]) -> pd.DataFrame:
-        row = {col: float(feature_payload.get(col, 0.0)) for col in self.feature_columns}
+        base_columns = [
+            "commits_30d",
+            "contributors_30d",
+            "open_issues",
+            "closed_issues_30d",
+            "open_prs",
+            "avg_commit_frequency",
+            "code_churn_rate",
+            "bug_fix_ratio",
+            "urgent_signal_ratio",
+            "negative_sentiment_ratio",
+            "test_coverage",
+            "ci_failures_rate",
+            "mean_pr_cycle_time_hours",
+            "release_stability_index",
+            "issue_to_commit_ratio",
+            "bus_factor_inverse",
+            "developer_load_index",
+            "commit_volatility",
+        ]
+        row = {col: float(feature_payload.get(col, 0.0)) for col in base_columns}
         # Ensure engineered fields are always coherent if omitted.
         if row["issue_to_commit_ratio"] == 0:
             row["issue_to_commit_ratio"] = row["open_issues"] / max(row["commits_30d"], 1)
@@ -303,6 +457,8 @@ class RiskScorePredictorML:
             row["bus_factor_inverse"] = 1 / math.sqrt(max(row["contributors_30d"], 1.0))
         if row["developer_load_index"] == 0:
             row["developer_load_index"] = (row["open_issues"] + row["open_prs"]) / max(row["contributors_30d"], 1)
+
+        row.update(self._derive_specialty_features(row))
         return pd.DataFrame([row], columns=self.feature_columns)
 
     def _compute_factor_importance(
@@ -313,12 +469,14 @@ class RiskScorePredictorML:
     ) -> Dict[str, float]:
         # Human-readable weighted factors; keeps output deterministic.
         weights = {
-            "issue_pressure": 0.24,
-            "delivery_risk": 0.18,
-            "code_stability": 0.17,
-            "quality_guardrails": 0.16,
-            "team_dynamics": 0.13,
-            "nlp_signal": 0.12,
+            "issue_pressure": 0.2,
+            "delivery_risk": 0.14,
+            "code_stability": 0.13,
+            "quality_guardrails": 0.13,
+            "team_dynamics": 0.12,
+            "system_fragility_signature": 0.14,
+            "coordination_debt_signature": 0.08,
+            "nlp_signal": 0.06,
         }
 
         issue_pressure = min(1.0, math.log1p(feature_row["issue_to_commit_ratio"]) / 2.2)
@@ -326,6 +484,14 @@ class RiskScorePredictorML:
         code_stability = min(1.0, feature_row["code_churn_rate"] * 0.65 + feature_row["commit_volatility"] * 0.35)
         quality_guardrails = min(1.0, (1 - feature_row["test_coverage"] / 100) * 0.65 + feature_row["ci_failures_rate"] * 0.35)
         team_dynamics = min(1.0, feature_row["developer_load_index"] / 100 + feature_row["bus_factor_inverse"])
+        system_fragility_signature = min(
+            1.0,
+            (feature_row["release_friction_index"] / 5.5) * 0.6 + (feature_row["remediation_latency"] / 120.0) * 0.4,
+        )
+        coordination_debt_signature = min(
+            1.0,
+            (feature_row["socio_technical_strain"] / 80.0) * 0.7 + (feature_row["collaboration_imbalance"] / 1.4) * 0.3,
+        )
         nlp_signal = min(1.0, nlp_signal_score / 100)
 
         values = {
@@ -334,6 +500,8 @@ class RiskScorePredictorML:
             "code_stability": code_stability,
             "quality_guardrails": quality_guardrails,
             "team_dynamics": team_dynamics,
+            "system_fragility_signature": system_fragility_signature,
+            "coordination_debt_signature": coordination_debt_signature,
             "nlp_signal": nlp_signal,
         }
 
@@ -349,27 +517,58 @@ class RiskScorePredictorML:
         nlp_signal_score: float,
         blend_alpha: float = 0.8,
     ) -> RiskPrediction:
-        if self.pipeline is None:
+        if self.primary_pipeline is None or self.stress_pipeline is None:
             self.train_model()
 
         features = self._to_feature_vector(feature_payload)
-        model = self.pipeline.named_steps["model"]
+        model = self.primary_pipeline.named_steps["model"]
 
         base_array = features.values
         base_preds = []
         for est in model.estimators_:
             base_preds.append(float(est.predict(base_array)[0]))
 
-        ml_risk = float(self.pipeline.predict(features)[0])
+        stress_columns = [
+            "issue_momentum",
+            "signal_entropy",
+            "release_friction_index",
+            "socio_technical_strain",
+            "remediation_latency",
+            "collaboration_imbalance",
+            "urgent_signal_ratio",
+            "negative_sentiment_ratio",
+            "issue_to_commit_ratio",
+            "developer_load_index",
+            "ci_failures_rate",
+            "mean_pr_cycle_time_hours",
+        ]
+
+        primary_risk = float(self.primary_pipeline.predict(features)[0])
+        stress_risk = float(self.stress_pipeline.predict(features[stress_columns])[0])
+        gate = float(
+            np.clip(
+                0.25
+                + (0.35 * features.iloc[0]["signal_entropy"])
+                + (0.22 * np.tanh(features.iloc[0]["release_friction_index"] / 2.5))
+                + (0.18 * np.tanh(features.iloc[0]["socio_technical_strain"] / 22.0)),
+                0.2,
+                0.85,
+            )
+        )
+
+        ml_risk = float((1 - gate) * primary_risk + gate * stress_risk)
         ml_risk = float(np.clip(ml_risk, 0.0, 100.0))
 
-        # Ensemble spread + model RMSE as uncertainty proxy.
+        # Ensemble spread + dual-head disagreement + model RMSE as uncertainty proxy.
         spread = float(np.std(base_preds))
+        disagreement = abs(primary_risk - stress_risk)
         rmse = float(self.status.metrics.get("rmse", 6.0))
-        uncertainty = float(np.clip((spread * 0.6 + rmse * 0.4) / 100, 0.01, 0.6))
+        uncertainty = float(np.clip((spread * 0.45 + disagreement * 0.25 + rmse * 0.3) / 100, 0.01, 0.6))
         confidence = float(np.clip(1.0 - uncertainty, 0.35, 0.99))
 
-        blended = float(np.clip((blend_alpha * ml_risk) + ((1 - blend_alpha) * nlp_signal_score), 0.0, 100.0))
+        signal_entropy = float(features.iloc[0]["signal_entropy"])
+        nlp_weight = float(np.clip((1 - blend_alpha) + 0.18 * signal_entropy, 0.08, 0.42))
+        blended = float(np.clip(((1 - nlp_weight) * ml_risk) + (nlp_weight * nlp_signal_score), 0.0, 100.0))
         factors = self._compute_factor_importance(features.iloc[0], ml_risk, nlp_signal_score)
 
         return RiskPrediction(

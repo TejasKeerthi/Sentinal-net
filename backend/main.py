@@ -2,19 +2,38 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
+from motor.motor_asyncio import AsyncDatabase
 
 from github_analyzer import get_analyzer
 from ml_models import get_anomaly_detector, get_risk_predictor
 from nlp_processor import analyze_batch, get_processor
 from realtime_handler import get_connection_manager, get_realtime_analyzer
+
+# MongoDB imports
+from db.config import MongoDBConnection, MongoDBSettings, get_db
+from db.database import Database
+from db.indexes import IndexManager
+from db.models import (
+    SystemRiskAssessment,
+    SemanticSignal,
+    TemporalTrend,
+    AIInsight,
+    RepositoryMetadata,
+    RiskReport,
+    RiskFactors,
+    RiskLevel,
+    SignalStatus,
+    SignalSource,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +240,53 @@ app.add_middleware(
 )
 
 
+# ---------------------------------------------------------------------------
+# MongoDB Lifecycle Events
+# ---------------------------------------------------------------------------
+
+
+@app.on_event("startup")
+async def startup_mongodb() -> None:
+    """Initialize MongoDB connection on app startup."""
+    try:
+        print("🔄 Initializing MongoDB connection...")
+        settings = MongoDBSettings()
+        MongoDBConnection.initialize(settings)
+        
+        # Verify connection
+        is_healthy = await MongoDBConnection.health_check()
+        if is_healthy:
+            print("✓ MongoDB connected successfully")
+            
+            # Create indexes
+            db = await MongoDBConnection.get_async_db()
+            print("🔨 Creating database indexes...")
+            await IndexManager.create_all_indexes(db)
+            print("✓ Indexes created successfully")
+        else:
+            print("⚠ MongoDB health check failed")
+    except Exception as e:
+        print(f"✗ MongoDB initialization error: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown_mongodb() -> None:
+    """Close MongoDB connection on app shutdown."""
+    try:
+        print("🔄 Closing MongoDB connection...")
+        await MongoDBConnection.close_async()
+        print("✓ MongoDB connection closed")
+    except Exception as e:
+        print(f"✗ MongoDB shutdown error: {e}")
+
+
+# Helper to get database instance for endpoints
+async def get_database(db: AsyncDatabase = Depends(get_db)) -> Database:
+    """Dependency for injecting Database class."""
+    return Database(db)
+
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     envelope = ErrorEnvelope(
@@ -294,7 +360,7 @@ def _mock_system_data() -> SystemData:
             title="Awaiting Repository Analysis",
             description="Submit an owner/repo input to run live GitHub + NLP + ML risk analysis.",
             factors=[
-                "Trained stacking ensemble is initialized",
+                "Trained dual-head adaptive fusion model is initialized",
                 "NLP engine is initialized",
                 "System ready for repository scoring",
             ],
@@ -480,6 +546,311 @@ async def detect_anomalies(payload: AnomalyRequest) -> AnomalyResponse:
 
 
 # ---------------------------------------------------------------------------
+# MongoDB Database Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/db/health")
+async def db_health(db: Database = Depends(get_database)) -> Dict[str, Any]:
+    """Check MongoDB connection health."""
+    is_healthy = await MongoDBConnection.health_check()
+    return {
+        "status": "healthy" if is_healthy else "unhealthy",
+        "database": MongoDBConnection._settings.mongodb_database if MongoDBConnection._settings else "unknown",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@app.post("/api/db/risk-assessment/save")
+async def save_risk_assessment(
+    assessment: SystemRiskAssessment,
+    db: Database = Depends(get_database),
+) -> Dict[str, str]:
+    """Save risk assessment to MongoDB."""
+    try:
+        assessment_id = await db.save_risk_assessment(assessment)
+        await db.log_action(
+            action="CREATE",
+            entity_type="RiskAssessment",
+            entity_id=assessment_id,
+        )
+        return {"id": assessment_id, "status": "saved"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save assessment: {str(e)}")
+
+
+@app.get("/api/db/risk-assessment/latest")
+async def get_latest_risk_assessment(
+    db: Database = Depends(get_database),
+) -> Optional[Dict[str, Any]]:
+    """Get latest risk assessment."""
+    assessment = await db.get_latest_risk_assessment()
+    if assessment:
+        return assessment.model_dump(by_alias=True)
+    return None
+
+
+@app.get("/api/db/risk-assessment/history")
+async def get_risk_history(
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Database = Depends(get_database),
+) -> List[Dict[str, Any]]:
+    """Get risk assessment history."""
+    assessments = await db.get_risk_assessment_history(days=days, limit=limit)
+    return [a.model_dump(by_alias=True) for a in assessments]
+
+
+@app.get("/api/db/risk-assessment/statistics")
+async def get_risk_statistics(
+    days: int = Query(30, ge=1, le=365),
+    db: Database = Depends(get_database),
+) -> Dict[str, Any]:
+    """Get risk statistics over period."""
+    return await db.get_risk_statistics(days=days)
+
+
+@app.post("/api/db/signal/save")
+async def save_signal(
+    signal: SemanticSignal,
+    db: Database = Depends(get_database),
+) -> Dict[str, str]:
+    """Save semantic signal to MongoDB."""
+    try:
+        signal_id = await db.save_signal(signal)
+        await db.log_action(
+            action="CREATE",
+            entity_type="Signal",
+            entity_id=signal_id,
+        )
+        return {"id": signal_id, "status": "saved"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save signal: {str(e)}")
+
+
+@app.get("/api/db/signals")
+async def get_signals(
+    status: Optional[str] = Query(None),
+    source: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=500),
+    skip: int = Query(0, ge=0),
+    db: Database = Depends(get_database),
+) -> Dict[str, Any]:
+    """Get signals with filtering and pagination."""
+    signals = await db.get_signals(status=status, source=source, limit=limit, skip=skip)
+    aggregated = await db.get_signals_aggregated()
+    return {
+        "data": [s.model_dump(by_alias=True) for s in signals],
+        "count": len(signals),
+        "summary": aggregated,
+    }
+
+
+@app.post("/api/db/signals/bulk")
+async def bulk_insert_signals(
+    signals: List[SemanticSignal],
+    db: Database = Depends(get_database),
+) -> Dict[str, int]:
+    """Bulk insert multiple signals."""
+    if not signals:
+        raise HTTPException(status_code=400, detail="No signals provided")
+    
+    count = await db.bulk_insert_signals(signals)
+    return {"inserted_count": count}
+
+
+@app.get("/api/db/signals/search")
+async def search_signals(
+    query: str = Query(..., min_length=3),
+    limit: int = Query(20, ge=1, le=100),
+    db: Database = Depends(get_database),
+) -> Dict[str, Any]:
+    """Full-text search on signals."""
+    signals = await db.search_signals(query, limit=limit)
+    return {
+        "query": query,
+        "results": [s.model_dump(by_alias=True) for s in signals],
+        "count": len(signals),
+    }
+
+
+@app.post("/api/db/trend/save")
+async def save_trend(
+    trend: TemporalTrend,
+    db: Database = Depends(get_database),
+) -> Dict[str, str]:
+    """Save temporal trend to MongoDB."""
+    try:
+        trend_id = await db.save_trend(trend)
+        await db.log_action(
+            action="CREATE",
+            entity_type="Trend",
+            entity_id=trend_id,
+        )
+        return {"id": trend_id, "status": "saved"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save trend: {str(e)}")
+
+
+@app.get("/api/db/trend/{metric_name}")
+async def get_trend(
+    metric_name: str,
+    db: Database = Depends(get_database),
+) -> Optional[Dict[str, Any]]:
+    """Get latest trend for metric."""
+    trend = await db.get_trend(metric_name)
+    if trend:
+        return trend.model_dump(by_alias=True)
+    return None
+
+
+@app.get("/api/db/trends/comparison")
+async def compare_trends(
+    metrics: str = Query(..., description="Comma-separated metric names"),
+    days: int = Query(30, ge=1, le=365),
+    db: Database = Depends(get_database),
+) -> List[Dict[str, Any]]:
+    """Compare multiple trends."""
+    metric_list = [m.strip() for m in metrics.split(",")]
+    return await db.get_trend_comparison(metric_list, days=days)
+
+
+@app.post("/api/db/ai-insight/save")
+async def save_ai_insight(
+    insight: AIInsight,
+    db: Database = Depends(get_database),
+) -> Dict[str, str]:
+    """Save AI insight to MongoDB."""
+    try:
+        insight_id = await db.save_ai_insight(insight)
+        await db.log_action(
+            action="CREATE",
+            entity_type="AIInsight",
+            entity_id=insight_id,
+        )
+        return {"id": insight_id, "status": "saved"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save insight: {str(e)}")
+
+
+@app.get("/api/db/ai-insights")
+async def get_ai_insights(
+    limit: int = Query(5, ge=1, le=50),
+    db: Database = Depends(get_database),
+) -> Dict[str, Any]:
+    """Get latest AI insights."""
+    insights = await db.get_latest_ai_insights(limit=limit)
+    return {
+        "insights": [i.model_dump(by_alias=True) for i in insights],
+        "count": len(insights),
+    }
+
+
+@app.post("/api/db/repository/save")
+async def save_repository(
+    repo: RepositoryMetadata,
+    db: Database = Depends(get_database),
+) -> Dict[str, str]:
+    """Save or update repository metadata."""
+    try:
+        repo_id = await db.save_repository(repo)
+        await db.log_action(
+            action="UPSERT",
+            entity_type="Repository",
+            entity_id=repo_id,
+        )
+        return {"id": repo_id, "status": "saved"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save repository: {str(e)}")
+
+
+@app.get("/api/db/repository/{repo_url}")
+async def get_repository(
+    repo_url: str,
+    db: Database = Depends(get_database),
+) -> Optional[Dict[str, Any]]:
+    """Get repository metadata."""
+    repo = await db.get_repository(repo_url)
+    if repo:
+        return repo.model_dump(by_alias=True)
+    return None
+
+
+@app.post("/api/db/risk-report/save")
+async def save_risk_report(
+    report: RiskReport,
+    db: Database = Depends(get_database),
+) -> Dict[str, str]:
+    """Save risk report to MongoDB."""
+    try:
+        report_id = await db.save_risk_report(report)
+        await db.log_action(
+            action="CREATE",
+            entity_type="RiskReport",
+            entity_id=report_id,
+        )
+        return {"id": report_id, "status": "saved"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save report: {str(e)}")
+
+
+@app.get("/api/db/risk-reports")
+async def get_risk_reports(
+    repository: Optional[str] = Query(None),
+    limit: int = Query(10, ge=1, le=100),
+    db: Database = Depends(get_database),
+) -> Dict[str, Any]:
+    """Get risk reports."""
+    reports = await db.get_risk_reports(repository=repository, limit=limit)
+    return {
+        "reports": [r.model_dump(by_alias=True) for r in reports],
+        "count": len(reports),
+    }
+
+
+@app.get("/api/db/dashboard/summary")
+async def get_dashboard_summary(
+    db: Database = Depends(get_database),
+) -> Dict[str, Any]:
+    """Get comprehensive dashboard summary."""
+    return await db.get_dashboard_summary()
+
+
+@app.get("/api/db/audit-logs")
+async def get_audit_logs(
+    action: Optional[str] = Query(None),
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Database = Depends(get_database),
+) -> Dict[str, Any]:
+    """Get audit logs."""
+    logs = await db.get_audit_logs(action=action, days=days, limit=limit)
+    return {
+        "logs": [l.model_dump(by_alias=True) for l in logs],
+        "count": len(logs),
+    }
+
+
+@app.delete("/api/db/cleanup")
+async def cleanup_old_data(
+    days: int = Query(90, ge=7, le=365, description="Delete data older than X days"),
+    db: Database = Depends(get_database),
+) -> Dict[str, Any]:
+    """Clean up old signals (maintenance endpoint)."""
+    deleted_count = await db.delete_old_signals(days=days)
+    await db.log_action(
+        action="CLEANUP",
+        entity_type="DataMaintenance",
+        changes={"deleted_signals": deleted_count, "older_than_days": days},
+    )
+    return {
+        "deleted_count": deleted_count,
+        "older_than_days": days,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+# ---------------------------------------------------------------------------
 # WebSocket endpoints
 # ---------------------------------------------------------------------------
 
@@ -552,3 +923,11 @@ async def websocket_analyze(websocket: WebSocket) -> None:
         pass
     finally:
         await manager.disconnect(websocket, client_id)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run("main:app", host=host, port=port, reload=False)

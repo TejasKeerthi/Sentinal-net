@@ -60,7 +60,7 @@ function App() {
                         Fix: add your token to{' '}
                         <code className="text-accent bg-white/5 px-1 py-0.5 rounded">.env</code>{' '}
                         →{' '}
-                        <code className="text-accent bg-white/5 px-1 py-0.5 rounded">VITE_GITHUB_TOKEN=ghp_…</code>
+                        <code className="text-accent bg-white/5 px-1 py-0.5 rounded">GITHUB_TOKEN=ghp_…</code>
                         , then restart the dev server.{' '}
                         <a
                           href="https://github.com/settings/tokens/new?description=sentinel-net&scopes=public_repo"

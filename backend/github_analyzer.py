@@ -7,11 +7,21 @@ features, and invokes the trained ML model for risk scoring.
 from __future__ import annotations
 
 import os
+import importlib
+from copy import deepcopy
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple
 
 from ml_models import get_risk_predictor
 from nlp_processor import get_processor
+
+try:
+    _dotenv = importlib.import_module("dotenv")
+    find_dotenv = getattr(_dotenv, "find_dotenv")
+    load_dotenv = getattr(_dotenv, "load_dotenv")
+    DOTENV_AVAILABLE = True
+except Exception:
+    DOTENV_AVAILABLE = False
 
 try:
     from github import Github, GithubException
@@ -21,13 +31,24 @@ except ImportError:
     GITHUB_AVAILABLE = False
 
 
+if DOTENV_AVAILABLE:
+    dotenv_path = find_dotenv(usecwd=True)
+    if dotenv_path:
+        load_dotenv(dotenv_path=dotenv_path, override=False)
+
+
 class GitHubAnalyzer:
     def __init__(self, github_token: str | None = None) -> None:
-        self.token = github_token or os.getenv("GITHUB_TOKEN")
+        self.token = github_token or os.getenv("GITHUB_TOKEN") or os.getenv("VITE_GITHUB_TOKEN")
         self.client = Github(self.token) if GITHUB_AVAILABLE else None
+        self._cache_ttl_seconds = max(0, int(os.getenv("GITHUB_ANALYSIS_CACHE_TTL", "300")))
+        self._cache: Dict[str, Tuple[datetime, Dict[str, Any]]] = {}
 
     def analyze_repo(self, repo_url: str) -> Dict[str, Any]:
         repo_path = self._extract_repo_path(repo_url)
+        cached = self._get_cached(repo_path)
+        if cached is not None:
+            return cached
 
         if not GITHUB_AVAILABLE or self.client is None:
             return self._fallback_analysis(repo_path, "PyGithub unavailable, using synthetic repo profile")
@@ -35,6 +56,11 @@ class GitHubAnalyzer:
         try:
             repo = self.client.get_repo(repo_path)
         except GithubException as exc:
+            if self._is_rate_limit_error(exc):
+                stale = self._get_cached(repo_path, allow_stale=True)
+                if stale is not None:
+                    return stale
+                return self._fallback_analysis(repo_path, self._rate_limit_message(exc))
             return self._fallback_analysis(repo_path, f"GitHub API error: {exc.data if hasattr(exc, 'data') else str(exc)}")
         except Exception as exc:
             return self._fallback_analysis(repo_path, f"Repository fetch error: {str(exc)}")
@@ -89,7 +115,7 @@ class GitHubAnalyzer:
                 "contributing_factors": prediction.contributing_factors,
             }
 
-            return {
+            result = {
                 "metrics": {
                     "failureRiskScore": risk_score,
                     "lastUpdated": datetime.utcnow().isoformat() + "Z",
@@ -116,9 +142,74 @@ class GitHubAnalyzer:
                     "reasoning_factors": prediction.contributing_factors,
                 },
             }
+            self._set_cache(repo_path, result)
+            return result
 
+        except GithubException as exc:
+            if self._is_rate_limit_error(exc):
+                stale = self._get_cached(repo_path, allow_stale=True)
+                if stale is not None:
+                    return stale
+                return self._fallback_analysis(repo_path, self._rate_limit_message(exc))
+            return self._fallback_analysis(repo_path, f"GitHub API error during analysis: {str(exc)}")
         except Exception as exc:
             return self._fallback_analysis(repo_path, f"Analysis pipeline error: {str(exc)}")
+
+    def _get_cached(self, repo_path: str, allow_stale: bool = False) -> Dict[str, Any] | None:
+        entry = self._cache.get(repo_path)
+        if entry is None:
+            return None
+
+        cached_at, payload = entry
+        age_seconds = (datetime.utcnow() - cached_at).total_seconds()
+        is_fresh = age_seconds <= self._cache_ttl_seconds
+
+        if not is_fresh and not allow_stale:
+            self._cache.pop(repo_path, None)
+            return None
+
+        cached_payload = deepcopy(payload)
+        metadata = cached_payload.setdefault("metrics", {}).setdefault("metadata", {})
+        metadata["cache_age_seconds"] = int(max(age_seconds, 0))
+        metadata["cache_ttl_seconds"] = self._cache_ttl_seconds
+        metadata["from_cache"] = True
+
+        if allow_stale and not is_fresh:
+            cached_payload["warning"] = "Using stale cached analysis because GitHub API rate limit was exceeded."
+
+        return cached_payload
+
+    def _set_cache(self, repo_path: str, payload: Dict[str, Any]) -> None:
+        self._cache[repo_path] = (datetime.utcnow(), deepcopy(payload))
+
+    def _is_rate_limit_error(self, exc: GithubException) -> bool:
+        status = getattr(exc, "status", None)
+        data = getattr(exc, "data", None)
+        message = str(exc).lower()
+
+        if isinstance(data, dict):
+            api_message = str(data.get("message", "")).lower()
+            message = f"{message} {api_message}".strip()
+
+        if "rate limit" in message or "abuse detection" in message:
+            return True
+
+        return status in {403, 429} and ("limit" in message or "abuse" in message)
+
+    def _rate_limit_message(self, exc: GithubException) -> str:
+        base = "GitHub API rate limit exceeded."
+        if not self.token:
+            base += " Configure GITHUB_TOKEN (or VITE_GITHUB_TOKEN) in .env and restart the backend."
+
+        try:
+            reset_at = self.client.rate_limiting_resettime if self.client else 0
+            if reset_at:
+                reset_at_iso = datetime.utcfromtimestamp(reset_at).isoformat() + "Z"
+                base += f" Rate limit resets around {reset_at_iso}."
+        except Exception:
+            pass
+
+        return base
 
     def _extract_repo_path(self, repo_url: str) -> str:
         value = repo_url.strip()
@@ -363,7 +454,7 @@ class GitHubAnalyzer:
         title = f"{repo_name} reliability risk is {severity}"
 
         description = (
-            f"Risk {risk_score}/100 is derived from a trained stacking ensemble and NLP signal analysis. "
+            f"Risk {risk_score}/100 is derived from a trained dual-head adaptive fusion model and NLP signal analysis. "
             f"Issue pressure ratio is {features['issue_to_commit_ratio']:.2f}, "
             f"CI failure rate estimate is {features['ci_failures_rate']:.2f}, "
             f"and urgent signal ratio is {features['urgent_signal_ratio']:.2f}."
@@ -503,4 +594,12 @@ class GitHubAnalyzer:
 
 
 def get_analyzer(github_token: str | None = None) -> GitHubAnalyzer:
-    return GitHubAnalyzer(github_token)
+    global _ANALYZER
+    if github_token:
+        return GitHubAnalyzer(github_token)
+    if _ANALYZER is None:
+        _ANALYZER = GitHubAnalyzer()
+    return _ANALYZER
+
+
+_ANALYZER: GitHubAnalyzer | None = None
