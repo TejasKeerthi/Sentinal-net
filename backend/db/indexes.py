@@ -1,15 +1,15 @@
 """MongoDB index definitions for optimal query performance."""
 
+from typing import Any
 from pymongo import ASCENDING, DESCENDING, TEXT, GEOSPHERE
 from pymongo.errors import OperationFailure
-from motor.motor_asyncio import AsyncDatabase
 
 
 class IndexManager:
     """Manage MongoDB indexes for collections."""
 
     @staticmethod
-    async def create_all_indexes(db: AsyncDatabase) -> None:
+    async def create_all_indexes(db: Any) -> None:
         """Create all necessary indexes."""
         await IndexManager.create_risk_assessment_indexes(db)
         await IndexManager.create_signal_indexes(db)
@@ -20,7 +20,7 @@ class IndexManager:
         await IndexManager.create_audit_log_indexes(db)
 
     @staticmethod
-    async def create_risk_assessment_indexes(db: AsyncDatabase) -> None:
+    async def create_risk_assessment_indexes(db: Any) -> None:
         """Risk Assessment Collection Indexes."""
         collection = db.risk_assessments
         
@@ -56,7 +56,7 @@ class IndexManager:
         print("✓ Risk assessment indexes created")
 
     @staticmethod
-    async def create_signal_indexes(db: AsyncDatabase) -> None:
+    async def create_signal_indexes(db: Any) -> None:
         """Semantic Signal Collection Indexes."""
         collection = db.signals
         
@@ -134,7 +134,7 @@ class IndexManager:
         print("✓ Signal indexes created")
 
     @staticmethod
-    async def create_trend_indexes(db: AsyncDatabase) -> None:
+    async def create_trend_indexes(db: Any) -> None:
         """Temporal Trend Collection Indexes."""
         collection = db.trends
         
@@ -169,7 +169,7 @@ class IndexManager:
         print("✓ Trend indexes created")
 
     @staticmethod
-    async def create_ai_insight_indexes(db: AsyncDatabase) -> None:
+    async def create_ai_insight_indexes(db: Any) -> None:
         """AI Insight Collection Indexes."""
         collection = db.ai_insights
         
@@ -197,7 +197,7 @@ class IndexManager:
         print("✓ AI insight indexes created")
 
     @staticmethod
-    async def create_repository_indexes(db: AsyncDatabase) -> None:
+    async def create_repository_indexes(db: Any) -> None:
         """Repository Metadata Collection Indexes."""
         collection = db.repositories
         
@@ -236,7 +236,7 @@ class IndexManager:
         print("✓ Repository indexes created")
 
     @staticmethod
-    async def create_risk_report_indexes(db: AsyncDatabase) -> None:
+    async def create_risk_report_indexes(db: Any) -> None:
         """Risk Report Collection Indexes."""
         collection = db.risk_reports
         
@@ -264,7 +264,7 @@ class IndexManager:
         print("✓ Risk report indexes created")
 
     @staticmethod
-    async def create_audit_log_indexes(db: AsyncDatabase) -> None:
+    async def create_audit_log_indexes(db: Any) -> None:
         """Audit Log Collection Indexes."""
         collection = db.audit_logs
         
@@ -307,7 +307,7 @@ class IndexManager:
         print("✓ Audit log indexes created")
 
     @staticmethod
-    async def rebuild_indexes(db: AsyncDatabase) -> None:
+    async def rebuild_indexes(db: Any) -> None:
         """Rebuild all indexes (maintenance operation)."""
         collections = [
             "risk_assessments",
@@ -328,7 +328,7 @@ class IndexManager:
                 print(f"✗ Failed to reindex {collection_name}: {e}")
 
     @staticmethod
-    async def get_index_stats(db: AsyncDatabase) -> dict:
+    async def get_index_stats(db: Any) -> dict:
         """Get statistics on collection indexes."""
         collections = [
             "risk_assessments",

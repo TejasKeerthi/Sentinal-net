@@ -11,7 +11,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
-from motor.motor_asyncio import AsyncDatabase
 
 from github_analyzer import get_analyzer
 from ml_models import get_anomaly_detector, get_risk_predictor
@@ -281,7 +280,7 @@ async def shutdown_mongodb() -> None:
 
 
 # Helper to get database instance for endpoints
-async def get_database(db: AsyncDatabase = Depends(get_db)) -> Database:
+async def get_database(db: Any = Depends(get_db)) -> Database:
     """Dependency for injecting Database class."""
     return Database(db)
 

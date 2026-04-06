@@ -2,7 +2,6 @@
 
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
-from motor.motor_asyncio import AsyncDatabase, AsyncCollection
 from pymongo import ASCENDING, DESCENDING
 from pymongo.errors import DuplicateKeyError, OperationFailure
 from bson import ObjectId
@@ -21,7 +20,7 @@ from db.models import (
 class Database:
     """Database operations with advanced MongoDB features."""
 
-    def __init__(self, db: AsyncDatabase):
+    def __init__(self, db: Any):
         self.db = db
 
     # ========== RISK ASSESSMENT OPERATIONS ==========

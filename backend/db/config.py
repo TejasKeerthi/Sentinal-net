@@ -1,10 +1,10 @@
 """MongoDB configuration and connection management."""
 
 import os
-from typing import Optional
+from typing import Optional, Any
 from pydantic_settings import BaseSettings
 from pymongo import MongoClient, ASCENDING, DESCENDING
-from motor.motor_asyncio import AsyncClient, AsyncDatabase
+from motor.motor_asyncio import AsyncIOMotorClient
 
 
 class MongoDBSettings(BaseSettings):
@@ -40,6 +40,7 @@ class MongoDBSettings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = 'ignore'  # Ignore extra environment variables
 
     def build_connection_string(self) -> str:
         """Build MongoDB connection string with auth if provided."""
@@ -63,9 +64,9 @@ class MongoDBSettings(BaseSettings):
 class MongoDBConnection:
     """MongoDB connection manager with async support."""
 
-    _async_client: Optional[AsyncClient] = None
+    _async_client: Optional[AsyncIOMotorClient] = None
     _sync_client: Optional[MongoClient] = None
-    _async_db: Optional[AsyncDatabase] = None
+    _async_db: Optional[Any] = None
     _settings: Optional[MongoDBSettings] = None
 
     @classmethod
@@ -74,7 +75,7 @@ class MongoDBConnection:
         cls._settings = settings or MongoDBSettings()
 
     @classmethod
-    async def get_async_client(cls) -> AsyncClient:
+    async def get_async_client(cls) -> AsyncIOMotorClient:
         """Get async MongoDB client (Motor)."""
         if cls._async_client is None:
             if cls._settings is None:
@@ -93,7 +94,7 @@ class MongoDBConnection:
         return cls._async_client
 
     @classmethod
-    async def get_async_db(cls) -> AsyncDatabase:
+    async def get_async_db(cls) -> Any:
         """Get async MongoDB database."""
         if cls._async_db is None:
             client = await cls.get_async_client()
@@ -158,6 +159,6 @@ class MongoDBConnection:
 
 
 # Convenient database access
-async def get_db() -> AsyncDatabase:
+async def get_db() -> Any:
     """Dependency for FastAPI to inject database."""
     return await MongoDBConnection.get_async_db()
